@@ -1,8 +1,8 @@
 // index/mod.rs
 // Index trait and associated types for vector search backends.
 // 2026-06-09: single Index trait covers both search and CRUD.
-//             If the Phase 5 query planner needs read-only search
-//             views, we may split into Index + Searchable traits.
+//             If the query planner ever needs read-only search views,
+//             we may split into Index + Searchable traits.
 
 pub mod flat;
 
@@ -30,8 +30,8 @@ pub struct SearchResult {
 /// Core operations every index backend must implement.
 ///
 /// # Notes
-/// `Send + Sync` bound is required because Phase 8 wraps indices in
-/// `Arc<RwLock<dyn Index>>` for concurrent REST API handlers.
+/// `Send + Sync` bound is required because the REST API layer wraps
+/// indices in `Arc<RwLock<dyn Index>>` for concurrent HTTP handlers.
 /// The dynamic dispatch overhead (~1ns per call) is negligible next to
 /// O(N·D) distance computation.
 ///

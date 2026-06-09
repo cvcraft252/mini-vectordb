@@ -1,7 +1,7 @@
 // core/metric.rs
 // Distance metrics for vector similarity search.
 // 2026-06-09: only float32 vectors supported. Binary metrics (Hamming)
-//             are stubbed for Phase 2.
+//             are not yet implemented.
 //             Cosine precomputes norms via single-pass fold to avoid
 //             iterating the vector twice. Mixed results in benchmarks
 //             but it's cleaner for small N.

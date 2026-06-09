@@ -114,7 +114,7 @@ impl FlatIndex {
     /// # Notes
     /// Uses `select_nth_unstable_by` for O(N) partial sort, which is
     /// faster than a binary heap (O(N log k)) for single queries.
-    /// If we add batch query support in Task 2.2, a heap per query
+    /// If we add batch query support later, a heap per query
     /// would be more ergonomic but ~2x slower at k=10.
     fn select_top_k(mut distances: Vec<(usize, f32)>, top_k: usize) -> Vec<(usize, f32)> {
         // handle edge cases: nothing to select, or asking for everything
@@ -266,14 +266,14 @@ impl Index for FlatIndex {
     /// them aligned.
     ///
     /// # Notes
-    /// O(N) scan is acceptable for Phase 1. Task 1.3 may add a
-    /// HashMap<String, usize> for O(1) id-to-index lookup if
-    /// delete-heavy workloads appear.
+    /// O(N) linear scan is acceptable for now. A HashMap<String, usize>
+    /// could provide O(1) id-to-index lookup if delete-heavy workloads
+    /// become common.
     ///
     /// Dimension resets to 0 when the last record is removed so
     /// a different shape can be inserted later.
     fn delete(&mut self, id: &str) -> Result<()> {
-        // linear scan — O(N) but acceptable for Phase 1
+        // linear scan — O(N) but acceptable while dataset is small
         if let Some(pos) = self.records.iter().position(|r| r.id == id) {
             // swap-remove keeps Vec contiguous and avoids shifting elements
             self.records.swap_remove(pos);
@@ -300,6 +300,10 @@ impl Index for FlatIndex {
 }
 
 // ── tests ──
+//
+// Note: all .unwrap() calls in test setup (insert/delete/get/search)
+// are on operations that cannot fail with the given test data:
+// dimensions always match, IDs are unique, and delete is infallible.
 #[cfg(test)]
 mod tests {
     use super::*;
