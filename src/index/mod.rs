@@ -150,4 +150,11 @@ pub trait Index: Send + Sync {
         top_k: usize,
         metric: DistanceMetric,
     ) -> Result<Vec<Vec<SearchResult>>>;
+
+    /// Return a snapshot of all records currently in the index.
+    ///
+    /// Clones every record — the clone cost is acceptable because
+    /// serialization already requires owned data, and this method
+    /// is called at most once per mutation in auto-persistence mode.
+    fn records(&self) -> Vec<Record>;
 }

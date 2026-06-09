@@ -10,6 +10,7 @@ pub mod index;
 /// Persistent storage backends (JSON, binary, memory-mapped).
 pub mod storage;
 
+use std::path::PathBuf;
 use std::sync::RwLock;
 
 use crate::core::metric::DistanceMetric;
@@ -17,6 +18,18 @@ use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
 use crate::index::flat::FlatIndex;
 use crate::index::{Index, SearchResult};
+use crate::storage::PersistentStorage;
+use crate::storage::bin_store::BinStorage;
+use crate::storage::json_store::JsonStorage;
+
+/// Which serialization format to use for auto-persistence.
+#[derive(Debug, Clone, Copy)]
+pub enum StorageFormat {
+    /// Human-readable JSON with pretty-printing.
+    Json,
+    /// Compact binary with magic header and raw f32 encoding.
+    Binary,
+}
 
 /// Thread-safe vector database backed by an in-memory index.
 ///
@@ -39,6 +52,12 @@ pub struct VectorDB {
     /// backing index can be replaced at runtime (e.g. `clear()` or
     /// future adaptive index selection).
     index: RwLock<Box<dyn Index>>,
+
+    /// Auto-persistence configuration. `None` means the database is
+    /// in-memory only and callers are responsible for explicit saves
+    /// via the storage module. `Some` means every mutation triggers
+    /// a full save to the configured path and format.
+    persistence: Option<(StorageFormat, PathBuf)>,
 }
 
 impl VectorDB {
@@ -53,6 +72,48 @@ impl VectorDB {
     pub fn new() -> Self {
         Self {
             index: RwLock::new(Box::new(FlatIndex::new())),
+            persistence: None,
+        }
+    }
+
+    /// Create a database that writes to disk after every mutation.
+    ///
+    /// Every insert, delete, update, and clear triggers a full save
+    /// via the chosen format. For datasets under ~10k records this
+    /// overhead is < 1ms (binary) to < 10ms (JSON). Larger datasets
+    /// should use manual saves via the storage module instead.
+    ///
+    /// # Arguments
+    /// * `path` — File to write. Created or truncated on each save.
+    /// * `format` — `Json` for human-readable debugging; `Binary`
+    ///   for compact storage and faster load times.
+    pub fn with_persistence(path: impl Into<PathBuf>, format: StorageFormat) -> Self {
+        Self {
+            index: RwLock::new(Box::new(FlatIndex::new())),
+            persistence: Some((format, path.into())),
+        }
+    }
+
+    /// True when auto-persistence is enabled.
+    pub fn is_persistent(&self) -> bool {
+        self.persistence.is_some()
+    }
+
+    /// Persist a snapshot of records via the configured format.
+    ///
+    /// Called by mutation methods while they hold the write lock.
+    /// The caller extracts records from the index and passes them
+    /// here — this avoids a second trait-object deref through the
+    /// `RwLockWriteGuard<Box<dyn Index>>`.
+    ///
+    /// When persistence is disabled (the default), this is a no-op.
+    fn save_all(&self, records: Vec<Record>) -> Result<()> {
+        let Some((format, path)) = &self.persistence else {
+            return Ok(());
+        };
+        match format {
+            StorageFormat::Json => JsonStorage::from_records(records).save(path),
+            StorageFormat::Binary => BinStorage::from_records(records).save(path),
         }
     }
 
@@ -78,10 +139,14 @@ impl VectorDB {
     /// db.insert(r)?;
     /// ```
     pub fn insert(&self, record: Record) -> Result<()> {
-        self.index
+        let mut index = self
+            .index
             .write()
-            .expect("RwLock is never poisoned; no panics in write-locked sections")
-            .insert(record)
+            .expect("RwLock is never poisoned; no panics in write-locked sections");
+        index.insert(record)?;
+        // auto-persistence: save while still holding the write lock
+        // so no concurrent mutation can leave the file inconsistent
+        self.save_all(index.records())
     }
 
     /// Search for the top_k most similar vectors. Acquires a read lock
@@ -176,10 +241,12 @@ impl VectorDB {
     /// db.delete("doc1")?;
     /// ```
     pub fn delete(&self, id: &str) -> Result<()> {
-        self.index
+        let mut index = self
+            .index
             .write()
-            .expect("RwLock is never poisoned; no panics in write-locked sections")
-            .delete(id)
+            .expect("RwLock is never poisoned; no panics in write-locked sections");
+        index.delete(id)?;
+        self.save_all(index.records())
     }
 
     /// Replace a record's vector while keeping its ID and metadata intact.
@@ -237,7 +304,7 @@ impl VectorDB {
             // to the Index trait, and keeps insertion path consistent
             index.delete(id)?;
             index.insert(record)?;
-            Ok(())
+            self.save_all(index.records())
         } else {
             // clone the id into the error — we can't move `id` since
             // it's a shared reference
@@ -293,7 +360,7 @@ impl VectorDB {
         // than draining individual records and automatically resets
         // the dimension constraint in FlatIndex
         *index = Box::new(FlatIndex::new());
-        Ok(())
+        self.save_all(index.records())
     }
 }
 

@@ -328,6 +328,13 @@ impl Index for FlatIndex {
     fn len(&self) -> usize {
         self.records.len()
     }
+
+    fn records(&self) -> Vec<Record> {
+        // clone the full record set for serialization; this is O(N)
+        // per save but acceptable for auto-persistence which fires
+        // once per mutation on datasets < 10k
+        self.records.clone()
+    }
 }
 
 // ── tests ──

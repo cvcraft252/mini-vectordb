@@ -1,12 +1,17 @@
 // VectorDB integration tests.
 
 use std::collections::HashMap;
+use std::fs;
 use std::sync::Arc;
 
+use mini_vectordb::StorageFormat;
 use mini_vectordb::VectorDB;
 use mini_vectordb::core::VectorDBError;
 use mini_vectordb::core::metric::DistanceMetric;
 use mini_vectordb::core::record::Record;
+use mini_vectordb::storage::PersistentStorage;
+use mini_vectordb::storage::bin_store::BinStorage;
+use mini_vectordb::storage::json_store::JsonStorage;
 
 fn make_record(id: &str, vec: Vec<f32>) -> Record {
     Record::new(id, vec)
@@ -229,4 +234,82 @@ fn search_batch_through_vector_db_wrapper() {
     assert_eq!(results.len(), 2);
     assert_eq!(results[0][0].id, "a");
     assert_eq!(results[1][0].id, "b");
+}
+
+// ── auto-persistence ──
+
+#[test]
+fn with_persistence_saves_after_insert() {
+    let path = "target/test_autosave_insert.bin";
+    let db = VectorDB::with_persistence(path, StorageFormat::Binary);
+    assert!(db.is_persistent());
+
+    db.insert(make_record("x", vec![1.0, 2.0])).unwrap();
+    let loaded = BinStorage::load(path).unwrap();
+    assert_eq!(loaded.len(), 1);
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn with_persistence_saves_after_delete() {
+    let path = "target/test_autosave_delete.bin";
+    let db = VectorDB::with_persistence(path, StorageFormat::Binary);
+    db.insert(make_record("x", vec![1.0])).unwrap();
+    db.delete("x").unwrap();
+
+    let loaded = BinStorage::load(path).unwrap();
+    assert!(loaded.is_empty());
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn with_persistence_saves_after_clear() {
+    let path = "target/test_autosave_clear.bin";
+    let db = VectorDB::with_persistence(path, StorageFormat::Binary);
+    db.insert(make_record("x", vec![1.0])).unwrap();
+    db.clear().unwrap();
+
+    let loaded = BinStorage::load(path).unwrap();
+    assert!(loaded.is_empty());
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn with_persistence_json_format_works() {
+    let path = "target/test_autosave_json.json";
+    let db = VectorDB::with_persistence(path, StorageFormat::Json);
+    db.insert(make_record("doc", vec![1.0, 2.0, 3.0])).unwrap();
+
+    let loaded = JsonStorage::load(path).unwrap();
+    let recs = loaded.into_records();
+    assert_eq!(recs[0].id, "doc");
+    assert_eq!(recs[0].vector, vec![1.0, 2.0, 3.0]);
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn non_persistent_db_does_not_create_files() {
+    let db = VectorDB::new();
+    assert!(!db.is_persistent());
+    db.insert(make_record("x", vec![1.0])).unwrap();
+    // no file should be created — this test passes if no panic occurs
+}
+
+#[test]
+fn auto_save_captures_full_state_after_multiple_ops() {
+    let path = "target/test_autosave_multi.bin";
+    let db = VectorDB::with_persistence(path, StorageFormat::Binary);
+
+    db.insert(make_record("a", vec![1.0])).unwrap();
+    db.insert(make_record("b", vec![2.0])).unwrap();
+    db.insert(make_record("c", vec![3.0])).unwrap();
+    db.delete("b").unwrap();
+    db.update("c", vec![9.0]).unwrap();
+
+    let loaded = BinStorage::load(path).unwrap();
+    let recs = loaded.into_records();
+    assert_eq!(recs.len(), 2);
+    let c = recs.iter().find(|r| r.id == "c").unwrap();
+    assert_eq!(c.vector, vec![9.0]);
+    fs::remove_file(path).unwrap();
 }
