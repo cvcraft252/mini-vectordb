@@ -3,6 +3,8 @@
 // Two backends planned: JSON (human-readable, debug-friendly)
 // and binary (compact, fast). Both implement PersistentStorage.
 
+/// Binary file persistence.
+pub mod bin_store;
 /// JSON file persistence.
 pub mod json_store;
 
