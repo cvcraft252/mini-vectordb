@@ -132,7 +132,7 @@ impl FlatIndex {
             a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
         });
         distances.truncate(k);
-        // sort the truncated prefix so results are in ascending distance order
+        // sort truncated prefix; same NaN safety invariant as above
         distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         distances
     }

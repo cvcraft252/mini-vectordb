@@ -1,5 +1,4 @@
-// tests/test_vector_db.rs
-// Integration tests for VectorDB thread-safe wrapper.
+// VectorDB integration tests.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -38,14 +37,14 @@ fn insert_and_get() {
 }
 
 #[test]
-fn get_nonexistent_returns_none() {
+fn get_nonexistent_id_returns_none() {
     let db = VectorDB::new();
     let result = db.get("ghost").unwrap();
     assert!(result.is_none());
 }
 
 #[test]
-fn insert_dimension_mismatch() {
+fn insert_dimension_mismatch_is_rejected() {
     let db = VectorDB::new();
     db.insert(make_record("a", vec![1.0, 2.0])).unwrap();
     let err = db
@@ -55,7 +54,7 @@ fn insert_dimension_mismatch() {
 }
 
 #[test]
-fn insert_empty_vector_rejected() {
+fn insert_empty_vector_is_rejected() {
     let db = VectorDB::new();
     let err = db.insert(make_record("a", vec![])).unwrap_err();
     assert!(matches!(err, VectorDBError::EmptyVector));
@@ -64,7 +63,7 @@ fn insert_empty_vector_rejected() {
 // ── delete ──
 
 #[test]
-fn delete_removes_record() {
+fn delete_existing_record_succeeds() {
     let db = VectorDB::new();
     db.insert(make_record("x", vec![1.0])).unwrap();
     db.delete("x").unwrap();
@@ -73,7 +72,7 @@ fn delete_removes_record() {
 }
 
 #[test]
-fn delete_nonexistent_is_noop() {
+fn delete_nonexistent_id_is_noop() {
     let db = VectorDB::new();
     db.insert(make_record("a", vec![1.0])).unwrap();
     db.delete("no_such_id").unwrap();
@@ -83,7 +82,7 @@ fn delete_nonexistent_is_noop() {
 // ── update ──
 
 #[test]
-fn update_preserves_metadata() {
+fn update_preserves_existing_metadata() {
     let db = VectorDB::new();
     let mut meta = HashMap::new();
     meta.insert("category".to_string(), "book".to_string());
@@ -99,14 +98,14 @@ fn update_preserves_metadata() {
 }
 
 #[test]
-fn update_nonexistent_id_returns_not_found() {
+fn update_nonexistent_id_fails() {
     let db = VectorDB::new();
     let err = db.update("ghost", vec![1.0, 2.0]).unwrap_err();
     assert!(matches!(err, VectorDBError::NotFound(_)));
 }
 
 #[test]
-fn update_dimension_mismatch() {
+fn update_dimension_mismatch_is_rejected() {
     let db = VectorDB::new();
     db.insert(make_record("a", vec![1.0, 2.0])).unwrap();
     let err = db.update("a", vec![1.0, 2.0, 3.0]).unwrap_err();
@@ -128,10 +127,8 @@ fn clear_removes_all_records() {
 #[test]
 fn clear_resets_dimension_constraint() {
     let db = VectorDB::new();
-    // first, insert with dim=2
     db.insert(make_record("a", vec![1.0, 2.0])).unwrap();
     db.clear().unwrap();
-    // after clear, any dimension should be accepted
     db.insert(make_record("b", vec![1.0, 2.0, 3.0])).unwrap();
     assert_eq!(db.len(), 1);
 }
@@ -139,7 +136,7 @@ fn clear_resets_dimension_constraint() {
 // ── search ──
 
 #[test]
-fn search_finds_nearest_neighbors() {
+fn search_finds_nearest_neighbor_first() {
     let db = VectorDB::new();
     db.insert(make_record("near", vec![1.0, 0.0])).unwrap();
     db.insert(make_record("far", vec![9.0, 0.0])).unwrap();
@@ -152,7 +149,7 @@ fn search_finds_nearest_neighbors() {
 }
 
 #[test]
-fn search_empty_db_returns_empty() {
+fn search_on_empty_database_returns_empty() {
     let db = VectorDB::new();
     let results = db
         .search(&[1.0, 2.0], 5, DistanceMetric::Euclidean)
@@ -161,7 +158,7 @@ fn search_empty_db_returns_empty() {
 }
 
 #[test]
-fn search_top_k_zero_returns_empty() {
+fn search_with_top_k_zero_returns_empty() {
     let db = VectorDB::new();
     db.insert(make_record("a", vec![1.0])).unwrap();
     let results = db.search(&[1.0], 0, DistanceMetric::Euclidean).unwrap();
@@ -180,9 +177,6 @@ fn concurrent_reads_do_not_deadlock() {
     for _ in 0..8 {
         let db_clone = Arc::clone(&db);
         let handle = std::thread::spawn(move || {
-            // each thread performs multiple reads; if RwLock
-            // were exclusive, these would serialize and the test
-            // would take noticeably longer
             for _ in 0..50 {
                 let results = db_clone
                     .search(&[1.0, 2.0, 3.0], 1, DistanceMetric::Cosine)
@@ -198,9 +192,8 @@ fn concurrent_reads_do_not_deadlock() {
 }
 
 #[test]
-fn concurrent_inserts_do_not_corrupt_count() {
+fn concurrent_inserts_keep_accurate_count() {
     let db = Arc::new(VectorDB::new());
-    // seed one record to lock the dimension to dim=2
     db.insert(make_record("seed", vec![0.0, 0.0])).unwrap();
 
     let mut handles = vec![];
@@ -217,6 +210,5 @@ fn concurrent_inserts_do_not_corrupt_count() {
     for handle in handles {
         handle.join().unwrap();
     }
-    // 1 seed + 10 concurrent = 11
     assert_eq!(db.len(), 11);
 }

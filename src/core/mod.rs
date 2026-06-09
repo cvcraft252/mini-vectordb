@@ -3,7 +3,9 @@
 // 2026-06-09: using thiserror instead of hand-rolled Display impls —
 //             cuts boilerplate and gives us #[from] for free later.
 
+/// Distance metrics: Cosine, Euclidean, DotProduct, Manhattan.
 pub mod metric;
+/// Vector record type with metadata support.
 pub mod record;
 
 use thiserror::Error;
@@ -27,4 +29,5 @@ pub enum VectorDBError {
     Other(String),
 }
 
+/// Shorthand for `std::result::Result<T, VectorDBError>`.
 pub type Result<T> = std::result::Result<T, VectorDBError>;

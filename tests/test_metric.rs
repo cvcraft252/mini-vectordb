@@ -1,3 +1,5 @@
+// Distance metric unit tests.
+
 use mini_vectordb::core::metric::DistanceMetric;
 
 macro_rules! assert_f32_eq {
@@ -55,7 +57,6 @@ fn cosine_zero_vector() {
 fn cosine_known_value() {
     let a = vec![1.0, 2.0, 3.0];
     let b = vec![4.0, 5.0, 6.0];
-    // dot=32, |a|=√14≈3.7417, |b|=√77≈8.775, cos≈0.9746, dist≈0.0254
     assert_f32_eq!(
         DistanceMetric::Cosine.compute(&a, &b),
         0.025368,

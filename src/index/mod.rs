@@ -4,6 +4,7 @@
 //             If the query planner ever needs read-only search views,
 //             we may split into Index + Searchable traits.
 
+/// Brute-force flat index.
 pub mod flat;
 
 use crate::core::Result;

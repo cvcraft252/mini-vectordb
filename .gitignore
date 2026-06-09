@@ -14,6 +14,9 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 
+# Archives (packaged artifacts, Skill exports, etc.)
+*.zip
+
 # Test outputs
 /test_output
 *.log
@@ -30,3 +33,7 @@ Thumbs.db
 # AI/Agent
 .opencode/
 .opencode*
+.codebuddy/
+.codebuddy/*
+.workbuddy
+.workbuddy/*

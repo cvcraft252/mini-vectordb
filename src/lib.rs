@@ -4,7 +4,9 @@
 // pulling in everything (e.g. `use mini_vectordb::core::metric`).
 // 2026-06-09: core + index done. storage/query/metadata later.
 
+/// Core types: Record, DistanceMetric, errors.
 pub mod core;
+/// Index trait and implementations.
 pub mod index;
 
 use std::sync::RwLock;
@@ -75,8 +77,6 @@ impl VectorDB {
     /// db.insert(r)?;
     /// ```
     pub fn insert(&self, record: Record) -> Result<()> {
-        // safe: RwLock is never poisoned — no panicking code runs
-        // between lock and unlock in this library
         self.index
             .write()
             .expect("RwLock is never poisoned; no panics in write-locked sections")
