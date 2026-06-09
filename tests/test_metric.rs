@@ -166,6 +166,41 @@ fn manhattan_negative_coordinates() {
     );
 }
 
+// ── Hamming ──
+
+#[test]
+fn hamming_identical_vectors_returns_zero() {
+    let a = vec![0.0, 1.0, 0.0, 1.0];
+    let b = vec![0.0, 1.0, 0.0, 1.0];
+    assert_f32_eq!(
+        DistanceMetric::Hamming.compute(&a, &b),
+        0.0,
+        "hamming of identical binary vectors should be 0"
+    );
+}
+
+#[test]
+fn hamming_known_mismatch_count() {
+    let a = vec![0.0, 1.0, 0.0, 1.0];
+    let b = vec![0.0, 0.0, 0.0, 1.0];
+    assert_f32_eq!(
+        DistanceMetric::Hamming.compute(&a, &b),
+        0.25,
+        "1 mismatch out of 4 positions = 0.25"
+    );
+}
+
+#[test]
+fn hamming_all_positions_differ_returns_one() {
+    let a = vec![0.0, 0.0];
+    let b = vec![1.0, 1.0];
+    assert_f32_eq!(
+        DistanceMetric::Hamming.compute(&a, &b),
+        1.0,
+        "all positions differ → distance 1.0"
+    );
+}
+
 // ── DistanceMetric::compute dispatch ──
 
 #[test]
