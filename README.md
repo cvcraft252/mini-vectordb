@@ -12,7 +12,7 @@ This project demonstrates how to build a modern vector database incrementally. E
 
 | Phase | Feature | Status | Description |
 |-------|---------|--------|-------------|
-| 1 | **Brute-Force Search** | In Progress (2/3) | Exact nearest neighbor with flat index |
+| 1 | **Brute-Force Search** | Done | Exact nearest neighbor with flat index |
 | 2 | **Similarity Metrics** | Planned | Cosine, Euclidean, DotProduct, Manhattan + SIMD |
 | 3 | **Persistence** | Planned | JSON and binary serialization |
 | 4 | **Metadata** | Planned | Typed metadata with BTree/Hash indexes |
@@ -164,7 +164,7 @@ curl -X POST http://localhost:3000/search \
 
 - [x] Phase 1 Task 1.1: Core types (Record, DistanceMetric, VectorDBError)
 - [x] Phase 1 Task 1.2: Brute-force flat index with precomputed norms
-- [ ] Phase 1 Task 1.3: Thread-safe CRUD wrapper with RwLock
+- [x] Phase 1 Task 1.3: Thread-safe CRUD wrapper with RwLock
 - [ ] Phase 2: Multiple distance metrics + batch search
 - [ ] Phase 3: JSON and binary persistence
 - [ ] Phase 4: Typed metadata with field indexes
