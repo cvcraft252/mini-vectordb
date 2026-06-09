@@ -141,4 +141,4 @@ cargo clippy
 cargo fmt
 ```
 
-Rust 1.95+ (Edition 2024). Dependencies: `thiserror`, `serde`, `serde_json`, `rayon`.
+[MIT](https://opensource.org/licenses/MIT)
