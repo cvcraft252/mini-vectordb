@@ -1,11 +1,5 @@
 // core/metric.rs
 // Distance metrics for vector similarity search.
-// 2026-06-09: all four continuous metrics active. Hamming is the
-//             first discrete metric — counts element-wise mismatches
-//             and normalizes by vector length to [0, 1].
-//             Cosine precomputes norms via single-pass fold to avoid
-//             iterating the vector twice. Mixed results in benchmarks
-//             but it's cleaner for small N.
 
 use serde::{Deserialize, Serialize};
 

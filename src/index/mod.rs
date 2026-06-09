@@ -1,8 +1,5 @@
 // index/mod.rs
 // Index trait and associated types for vector search backends.
-// 2026-06-09: single Index trait covers both search and CRUD.
-//             If the query planner ever needs read-only search views,
-//             we may split into Index + Searchable traits.
 
 /// Brute-force flat index.
 pub mod flat;

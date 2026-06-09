@@ -1,10 +1,5 @@
 // index/flat.rs
 // Brute-force exact nearest neighbor index. O(N·D) per search.
-// 2026-06-09: stores records in a contiguous Vec for cache-friendly
-//             linear scans. Precomputes L2 norms so cosine distance
-//             only does one sqrt per query (instead of N+1).
-//             At N < 1000, linear scan often beats tree-based approaches
-//             due to branch prediction and SIMD auto-vectorization.
 
 use crate::core::metric::DistanceMetric;
 use crate::core::record::Record;

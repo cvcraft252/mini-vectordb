@@ -2,12 +2,13 @@
 // mini-vectordb public API root. Each module tree is exposed
 // individually so callers can import specific types without
 // pulling in everything (e.g. `use mini_vectordb::core::metric`).
-// 2026-06-09: core + index done. storage/query/metadata later.
 
 /// Core types: Record, DistanceMetric, errors.
 pub mod core;
 /// Index trait and implementations.
 pub mod index;
+/// Persistent storage backends (JSON, binary, memory-mapped).
+pub mod storage;
 
 use std::sync::RwLock;
 

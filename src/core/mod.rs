@@ -1,7 +1,5 @@
 // core/mod.rs
 // Central error type and module root for the vector database.
-// 2026-06-09: using thiserror instead of hand-rolled Display impls —
-//             cuts boilerplate and gives us #[from] for free later.
 
 /// Distance metrics: Cosine, Euclidean, DotProduct, Manhattan.
 pub mod metric;

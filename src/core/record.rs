@@ -1,8 +1,5 @@
 // core/record.rs
 // The fundamental data unit: a float32 vector with string metadata.
-// 2026-06-09: metadata is flat HashMap<String,String> for now.
-//             A typed MetadataValue enum would enable range queries
-//             on numeric fields (e.g. price > 100).
 
 use std::collections::HashMap;
 
