@@ -1,0 +1,12 @@
+[package]
+name = "mini-vectordb"
+version = "0.1.0"
+edition = "2024"
+authors = ["cvcraft <coldcheese@163.com>"]
+description = "A progressive vector database in Rust"
+license = "MIT"
+repository = "https://github.com/cvcraft252/mini-vectordb"
+
+[dependencies]
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
