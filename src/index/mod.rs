@@ -136,4 +136,21 @@ pub trait Index: Send + Sync {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Run the same search against multiple query vectors in one call.
+    ///
+    /// # Arguments
+    /// * `queries` — each query must match the stored dimension.
+    /// * `top_k` — results per query.
+    /// * `metric` — distance function applied to all queries.
+    ///
+    /// # Returns
+    /// One `Vec<SearchResult>` per input query, in the same order.
+    /// Each inner Vec is sorted by distance ascending.
+    fn search_batch(
+        &self,
+        queries: &[Vec<f32>],
+        top_k: usize,
+        metric: DistanceMetric,
+    ) -> Result<Vec<Vec<SearchResult>>>;
 }

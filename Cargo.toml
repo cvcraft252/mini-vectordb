@@ -10,3 +10,4 @@ repository = "https://github.com/cvcraft252/mini-vectordb"
 [dependencies]
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
+rayon = "1"

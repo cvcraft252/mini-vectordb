@@ -117,6 +117,27 @@ impl VectorDB {
             .search(query, top_k, metric)
     }
 
+    /// Batch search — parallel across queries under a single read lock.
+    ///
+    /// # Arguments
+    /// * `queries` — each query must match stored dimension.
+    /// * `top_k` — results per query.
+    /// * `metric` — distance function for all queries.
+    ///
+    /// # Returns
+    /// One result set per query, in input order.
+    pub fn search_batch(
+        &self,
+        queries: &[Vec<f32>],
+        top_k: usize,
+        metric: DistanceMetric,
+    ) -> Result<Vec<Vec<SearchResult>>> {
+        self.index
+            .read()
+            .expect("RwLock is never poisoned; no panics in read-locked sections")
+            .search_batch(queries, top_k, metric)
+    }
+
     /// Look up a record by ID. Acquires a read lock.
     ///
     /// # Arguments

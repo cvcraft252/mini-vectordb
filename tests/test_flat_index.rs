@@ -192,3 +192,73 @@ fn records_and_norms_stay_aligned_after_swap_remove() {
     assert_eq!(results[0].id, "r0");
     assert!(results[0].distance < 1.0);
 }
+
+// ── batch search ──
+
+#[test]
+fn search_batch_returns_one_result_set_per_query() {
+    let mut idx = FlatIndex::new();
+    idx.insert(make_record("a", vec![1.0, 0.0])).unwrap();
+    idx.insert(make_record("b", vec![0.0, 1.0])).unwrap();
+    idx.insert(make_record("c", vec![9.0, 0.0])).unwrap();
+
+    let queries = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+    let results = idx
+        .search_batch(&queries, 2, DistanceMetric::Euclidean)
+        .unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].len(), 2);
+    assert_eq!(results[1].len(), 2);
+}
+
+#[test]
+fn search_batch_matches_sequential_results() {
+    let mut idx = FlatIndex::new();
+    for i in 0..20 {
+        let angle = i as f32 * 0.3;
+        idx.insert(make_record(
+            &format!("p{i}"),
+            vec![angle.cos(), angle.sin()],
+        ))
+        .unwrap();
+    }
+
+    let queries: Vec<Vec<f32>> = (0..10)
+        .map(|i| vec![(i as f32 * 0.7).cos(), (i as f32 * 0.7).sin()])
+        .collect();
+
+    let batch_results = idx
+        .search_batch(&queries, 3, DistanceMetric::Cosine)
+        .unwrap();
+
+    for (i, q) in queries.iter().enumerate() {
+        let sequential = idx.search(q, 3, DistanceMetric::Cosine).unwrap();
+        assert_eq!(batch_results[i].len(), sequential.len());
+        for (a, b) in batch_results[i].iter().zip(sequential.iter()) {
+            assert_eq!(a.id, b.id);
+            assert!((a.distance - b.distance).abs() < 1e-5);
+        }
+    }
+}
+
+#[test]
+fn search_batch_dimension_mismatch_is_rejected() {
+    let mut idx = FlatIndex::new();
+    idx.insert(make_record("a", vec![1.0, 2.0, 3.0])).unwrap();
+
+    let queries = vec![vec![1.0, 2.0, 3.0], vec![1.0, 2.0]];
+    let err = idx
+        .search_batch(&queries, 5, DistanceMetric::Euclidean)
+        .unwrap_err();
+    assert!(matches!(err, VectorDBError::DimensionMismatch { .. }));
+}
+
+#[test]
+fn search_batch_empty_queries_returns_empty() {
+    let mut idx = FlatIndex::new();
+    idx.insert(make_record("a", vec![1.0])).unwrap();
+
+    let results = idx.search_batch(&[], 5, DistanceMetric::Euclidean).unwrap();
+    assert!(results.is_empty());
+}

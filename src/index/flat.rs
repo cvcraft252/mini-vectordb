@@ -233,6 +233,42 @@ impl Index for FlatIndex {
         Ok(results)
     }
 
+    /// Run search against multiple query vectors in parallel with rayon.
+    ///
+    /// # Implementation
+    /// Every query is independent — no shared mutable state across
+    /// threads. `rayon::par_iter` maps queries to `self.search()` and
+    /// rayon's work-stealing scheduler balances load across cores.
+    ///
+    /// Each query does O(N·D) work (N = index size, D = dimension),
+    /// which far outweighs the overhead of spawning threads and
+    /// allocating per-query result Vecs (top_k * ~1KB).
+    ///
+    /// Dimension validation happens upfront before launching parallel
+    /// work — one check avoids N partial errors and wasted computation.
+    fn search_batch(
+        &self,
+        queries: &[Vec<f32>],
+        top_k: usize,
+        metric: DistanceMetric,
+    ) -> Result<Vec<Vec<SearchResult>>> {
+        // validate all queries match stored dimension before any work
+        for q in queries.iter() {
+            if q.len() != self.dimension {
+                return Err(VectorDBError::DimensionMismatch {
+                    expected: self.dimension,
+                    actual: q.len(),
+                });
+            }
+        }
+        // parallel map: rayon handles thread pool and work distribution
+        use rayon::prelude::*;
+        queries
+            .par_iter()
+            .map(|q| self.search(q, top_k, metric))
+            .collect::<Result<Vec<_>>>()
+    }
+
     /// Insert a record. On first insert, sets `self.dimension`.
     /// On subsequent inserts, validates dim match.
     /// Pushes the record and its precomputed L2 norm.

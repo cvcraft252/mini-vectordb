@@ -212,3 +212,21 @@ fn concurrent_inserts_keep_accurate_count() {
     }
     assert_eq!(db.len(), 11);
 }
+
+// ── batch search ──
+
+#[test]
+fn search_batch_through_vector_db_wrapper() {
+    let db = VectorDB::new();
+    db.insert(make_record("a", vec![1.0, 0.0])).unwrap();
+    db.insert(make_record("b", vec![0.0, 1.0])).unwrap();
+
+    let queries = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+    let results = db
+        .search_batch(&queries, 1, DistanceMetric::Cosine)
+        .unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0][0].id, "a");
+    assert_eq!(results[1][0].id, "b");
+}
