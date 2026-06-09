@@ -141,4 +141,12 @@ cargo clippy
 cargo fmt
 ```
 
+## Acknowledgements
+
+- [HNSW paper](https://arxiv.org/abs/1603.09320) — Malkov & Yashunin
+- [Faiss](https://github.com/facebookresearch/faiss) — Meta's vector search library
+- [Qdrant](https://github.com/qdrant/qdrant) — Rust vector database inspiration
+- [pgvector](https://github.com/pgvector/pgvector) — Postgres vector extension
+
+## License
 [MIT](https://opensource.org/licenses/MIT)
