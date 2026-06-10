@@ -1,5 +1,6 @@
-//! Index trait and brute-force flat index for exact nearest neighbor search.
+//! Index trait and implementations: brute-force flat and HNSW graph.
 pub mod flat;
+pub mod hnsw;
 
 use crate::core::Result;
 use crate::core::metric::DistanceMetric;
