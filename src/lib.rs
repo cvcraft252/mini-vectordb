@@ -16,6 +16,7 @@ use crate::core::metric::DistanceMetric;
 use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
 use crate::index::flat::FlatIndex;
+use crate::index::hnsw::HnswIndex;
 use crate::index::{Index, SearchResult};
 use crate::metadata::index::MetadataIndex;
 use crate::query::filter::parse_filter;
@@ -56,6 +57,9 @@ pub struct VectorDB {
     persistence: Option<(StorageFormat, PathBuf)>,
 }
 
+/// Record count at which FlatIndex is automatically replaced by HnswIndex.
+const UPGRADE_THRESHOLD: usize = 1000;
+
 impl VectorDB {
     /// Create a database with an empty flat index.
     ///
@@ -88,6 +92,17 @@ impl VectorDB {
     /// True when auto-persistence is enabled.
     pub fn is_persistent(&self) -> bool {
         self.persistence.is_some()
+    }
+
+    /// Replace the current FlatIndex with HnswIndex, migrating all records.
+    fn upgrade_to_hnsw(&self, index: &mut Box<dyn Index>) -> Result<()> {
+        let records = index.records();
+        let mut hnsw = HnswIndex::new();
+        for r in records {
+            hnsw.insert(r)?;
+        }
+        *index = Box::new(hnsw);
+        Ok(())
     }
 
     /// Persist a snapshot of records via the configured format.
@@ -132,8 +147,10 @@ impl VectorDB {
             .write()
             .expect("RwLock is never poisoned; no panics in write-locked sections");
         index.insert(record)?;
-        // auto-persistence: save while still holding the write lock
-        // so no concurrent mutation can leave the file inconsistent
+        // upgrade to HNSW exactly when crossing the threshold
+        if index.len() == UPGRADE_THRESHOLD {
+            self.upgrade_to_hnsw(&mut index)?;
+        }
         self.save_all(index.records())
     }
 

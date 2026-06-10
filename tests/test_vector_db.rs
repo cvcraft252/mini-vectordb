@@ -422,3 +422,43 @@ fn filtered_search_bad_syntax_returns_error() {
     let result = db.search_filtered(&[1.0], 5, DistanceMetric::Euclidean, "category =");
     assert!(result.is_err());
 }
+
+// ── adaptive index selection ──
+
+#[test]
+fn stays_flat_below_threshold() {
+    let db = VectorDB::new();
+    for i in 0..999 {
+        db.insert(make_record(&format!("r{i}"), vec![i as f32]))
+            .unwrap();
+    }
+    assert_eq!(db.len(), 999);
+    // search still works on flat index
+    let results = db.search(&[0.0], 1, DistanceMetric::Euclidean).unwrap();
+    assert_eq!(results[0].id, "r0");
+}
+
+#[test]
+fn upgrades_to_hnsw_at_threshold() {
+    let db = VectorDB::new();
+    for i in 0..1000 {
+        db.insert(make_record(&format!("r{i}"), vec![i as f32]))
+            .unwrap();
+    }
+    assert_eq!(db.len(), 1000);
+    let results = db.search(&[0.0], 3, DistanceMetric::Euclidean).unwrap();
+    assert!(results.len() >= 1);
+    assert!(results.iter().zip(results.iter().skip(1)).all(|(a, b)| a.distance <= b.distance));
+}
+
+#[test]
+fn search_works_after_upgrade() {
+    let db = VectorDB::new();
+    for i in 0..1001 {
+        db.insert(make_record(&format!("r{i}"), vec![i as f32]))
+            .unwrap();
+    }
+    let results = db.search(&[0.0], 5, DistanceMetric::Euclidean).unwrap();
+    assert!(!results.is_empty());
+    assert!(results[0].distance <= results[1].distance);
+}
