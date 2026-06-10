@@ -1,6 +1,7 @@
-// Typed metadata serialization and JSON round-trip tests.
+// Typed metadata serialization, JSON round-trip, and index tests.
 
 use mini_vectordb::core::record::Record;
+use mini_vectordb::metadata::index::MetadataIndex;
 use mini_vectordb::metadata::{Metadata, MetadataValue};
 
 // ── value construction and equality ──
@@ -202,4 +203,163 @@ fn record_with_typed_metadata_roundtrips_through_json() {
     assert_eq!(record.id, back.id);
     assert_eq!(record.vector, back.vector);
     assert_eq!(record.metadata, back.metadata);
+}
+
+// ── MetadataIndex ──
+
+#[test]
+fn index_string_exact_match() {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), MetadataValue::String("book".into()));
+    idx.index_record("r1", &meta);
+    let ids = idx.get_string("category", "book");
+    assert_eq!(ids, vec!["r1"]);
+    assert!(idx.get_string("category", "film").is_empty());
+    assert!(idx.get_string("nonexistent", "book").is_empty());
+}
+
+#[test]
+fn index_numeric_eq() {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("price".into(), MetadataValue::Integer(100));
+    idx.index_record("r1", &meta);
+    assert_eq!(idx.get_numeric_eq("price", 100.0), vec!["r1"]);
+    assert!(idx.get_numeric_eq("price", 99.0).is_empty());
+}
+
+#[test]
+fn index_numeric_gt() {
+    let mut idx = MetadataIndex::new();
+    for i in 0..5 {
+        let mut meta = Metadata::new();
+        meta.insert("price".into(), MetadataValue::Integer(i * 10));
+        idx.index_record(&format!("r{i}"), &meta);
+    }
+    let ids = idx.get_numeric_gt("price", 10.0);
+    assert_eq!(ids.len(), 3);
+    assert!(ids.contains(&"r2".to_string()));
+    assert!(ids.contains(&"r3".to_string()));
+    assert!(ids.contains(&"r4".to_string()));
+}
+
+#[test]
+fn index_numeric_lt() {
+    let mut idx = MetadataIndex::new();
+    for i in 0..5 {
+        let mut meta = Metadata::new();
+        meta.insert("price".into(), MetadataValue::Integer(i * 10));
+        idx.index_record(&format!("r{i}"), &meta);
+    }
+    let ids = idx.get_numeric_lt("price", 20.0);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"r0".to_string()));
+    assert!(ids.contains(&"r1".to_string()));
+}
+
+#[test]
+fn index_float_works_same_as_integer() {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("score".into(), MetadataValue::Float(3.5));
+    idx.index_record("r1", &meta);
+    assert_eq!(idx.get_numeric_eq("score", 3.5), vec!["r1"]);
+}
+
+#[test]
+fn index_bool_exact_match() {
+    let mut idx = MetadataIndex::new();
+    let mut meta_a = Metadata::new();
+    meta_a.insert("active".into(), MetadataValue::Bool(true));
+    idx.index_record("a", &meta_a);
+    let mut meta_b = Metadata::new();
+    meta_b.insert("active".into(), MetadataValue::Bool(false));
+    idx.index_record("b", &meta_b);
+    assert_eq!(idx.get_bool("active", true), vec!["a"]);
+    assert_eq!(idx.get_bool("active", false), vec!["b"]);
+    assert!(idx.get_bool("nonexistent", true).is_empty());
+}
+
+#[test]
+fn index_deindex_removes_record() {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), MetadataValue::String("book".into()));
+    meta.insert("price".into(), MetadataValue::Integer(50));
+    idx.index_record("r1", &meta);
+    idx.deindex_record("r1", &meta);
+    assert!(idx.get_string("category", "book").is_empty());
+    assert!(idx.get_numeric_eq("price", 50.0).is_empty());
+}
+
+#[test]
+fn index_clear_field_removes_all_entries() {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), MetadataValue::String("book".into()));
+    idx.index_record("r1", &meta);
+    assert_eq!(idx.string_field_count(), 1);
+    idx.clear_field("category");
+    assert_eq!(idx.string_field_count(), 0);
+    assert!(idx.get_string("category", "book").is_empty());
+}
+
+#[test]
+fn index_multiple_records_same_value() {
+    let mut idx = MetadataIndex::new();
+    for id in ["a", "b", "c"] {
+        let mut meta = Metadata::new();
+        meta.insert("tag".into(), MetadataValue::String("rust".into()));
+        idx.index_record(id, &meta);
+    }
+    let ids = idx.get_string("tag", "rust");
+    assert_eq!(ids.len(), 3);
+}
+
+#[test]
+fn index_deindex_one_of_three_shared_value() {
+    let mut idx = MetadataIndex::new();
+    for id in ["a", "b", "c"] {
+        let mut meta = Metadata::new();
+        meta.insert("tag".into(), MetadataValue::String("rust".into()));
+        idx.index_record(id, &meta);
+    }
+    let mut meta = Metadata::new();
+    meta.insert("tag".into(), MetadataValue::String("rust".into()));
+    idx.deindex_record("b", &meta);
+    let ids = idx.get_string("tag", "rust");
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"a".to_string()));
+    assert!(ids.contains(&"c".to_string()));
+}
+
+#[test]
+fn index_null_and_list_are_skipped() {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("null_field".into(), MetadataValue::Null);
+    meta.insert(
+        "list_field".into(),
+        MetadataValue::List(vec![MetadataValue::Integer(1)]),
+    );
+    idx.index_record("r1", &meta);
+    assert_eq!(idx.string_field_count(), 0);
+    assert_eq!(idx.numeric_field_count(), 0);
+}
+
+#[test]
+fn index_mixed_field_types() {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("name".into(), MetadataValue::String("alice".into()));
+    meta.insert("age".into(), MetadataValue::Integer(30));
+    meta.insert("score".into(), MetadataValue::Float(9.5));
+    meta.insert("active".into(), MetadataValue::Bool(true));
+    idx.index_record("r1", &meta);
+
+    assert_eq!(idx.get_string("name", "alice"), vec!["r1"]);
+    assert_eq!(idx.get_numeric_eq("age", 30.0), vec!["r1"]);
+    assert_eq!(idx.get_numeric_eq("score", 9.5), vec!["r1"]);
+    assert_eq!(idx.get_bool("active", true), vec!["r1"]);
 }

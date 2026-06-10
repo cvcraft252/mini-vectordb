@@ -36,3 +36,5 @@ pub enum MetadataValue {
 /// meta.insert("price".into(), MetadataValue::Integer(42));
 /// ```
 pub type Metadata = HashMap<String, MetadataValue>;
+/// Metadata index: string hashmap, numeric btreemap, bool pairs.
+pub mod index;
