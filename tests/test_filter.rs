@@ -1,7 +1,8 @@
-// Filter AST parsing tests.
+// Filter AST and evaluation tests.
 
-use mini_vectordb::metadata::MetadataValue;
-use mini_vectordb::query::filter::{Filter, parse_filter};
+use mini_vectordb::metadata::index::MetadataIndex;
+use mini_vectordb::metadata::{Metadata, MetadataValue};
+use mini_vectordb::query::filter::{Filter, evaluate_filter, parse_filter};
 
 fn s(v: &str) -> MetadataValue {
     MetadataValue::String(v.into())
@@ -256,4 +257,166 @@ fn parse_case_insensitive_keywords() {
     let f1 = parse_filter("a = 1 and b = 2").unwrap();
     let f2 = parse_filter("a = 1 AND b = 2").unwrap();
     assert_eq!(f1, f2);
+}
+
+// ── filter evaluation ──
+
+fn make_index() -> MetadataIndex {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), s("book"));
+    meta.insert("price".into(), i(30));
+    idx.index_record("r1", &meta);
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), s("book"));
+    meta.insert("price".into(), i(80));
+    idx.index_record("r2", &meta);
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), s("film"));
+    meta.insert("price".into(), i(50));
+    meta.insert("active".into(), b(true));
+    idx.index_record("r3", &meta);
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), s("film"));
+    meta.insert("price".into(), i(20));
+    meta.insert("active".into(), b(false));
+    idx.index_record("r4", &meta);
+    idx
+}
+
+#[test]
+fn eval_string_equality() {
+    let idx = make_index();
+    let f = parse_filter("category = \"book\"").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"r1".to_string()));
+    assert!(ids.contains(&"r2".to_string()));
+}
+
+#[test]
+fn eval_numeric_less_than() {
+    let idx = make_index();
+    let f = parse_filter("price < 40").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"r1".to_string()));
+    assert!(ids.contains(&"r4".to_string()));
+}
+
+#[test]
+fn eval_numeric_greater_than() {
+    let idx = make_index();
+    let f = parse_filter("price > 40").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"r2".to_string()));
+    assert!(ids.contains(&"r3".to_string()));
+}
+
+#[test]
+fn eval_less_equal() {
+    let idx = make_index();
+    let f = parse_filter("price <= 30").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"r1".to_string()));
+    assert!(ids.contains(&"r4".to_string()));
+}
+
+#[test]
+fn eval_greater_equal() {
+    let idx = make_index();
+    let f = parse_filter("price >= 50").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"r2".to_string()));
+    assert!(ids.contains(&"r3".to_string()));
+}
+
+#[test]
+fn eval_and() {
+    let idx = make_index();
+    let f = parse_filter("category = \"book\" AND price < 50").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids, vec!["r1"]);
+}
+
+#[test]
+fn eval_or() {
+    let idx = make_index();
+    let f = parse_filter("price = 80 OR price = 20").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"r2".to_string()));
+    assert!(ids.contains(&"r4".to_string()));
+}
+
+#[test]
+fn eval_in() {
+    let idx = make_index();
+    let f = parse_filter("category IN (\"book\", \"film\")").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 4);
+}
+
+#[test]
+fn eval_like() {
+    let mut idx = MetadataIndex::new();
+    let mut meta = Metadata::new();
+    meta.insert("name".into(), s("apple"));
+    idx.index_record("a", &meta);
+    let mut meta = Metadata::new();
+    meta.insert("name".into(), s("apricot"));
+    idx.index_record("b", &meta);
+    let mut meta = Metadata::new();
+    meta.insert("name".into(), s("banana"));
+    idx.index_record("c", &meta);
+    let f = parse_filter("name LIKE \"ap%\"").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"a".to_string()));
+    assert!(ids.contains(&"b".to_string()));
+}
+
+#[test]
+fn eval_bool() {
+    let idx = make_index();
+    let f = parse_filter("active = true").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids, vec!["r3"]);
+}
+
+#[test]
+fn eval_not_equal_string() {
+    let idx = make_index();
+    let f = parse_filter("category != \"film\"").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"r1".to_string()));
+    assert!(ids.contains(&"r2".to_string()));
+}
+
+#[test]
+fn eval_not_equal_numeric() {
+    let idx = make_index();
+    let f = parse_filter("price != 30").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert_eq!(ids.len(), 3);
+}
+
+#[test]
+fn eval_empty_result() {
+    let idx = make_index();
+    let f = parse_filter("category = \"music\"").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert!(ids.is_empty());
+}
+
+#[test]
+fn eval_and_short_circuits_on_empty() {
+    let idx = make_index();
+    let f = parse_filter("category = \"music\" AND price = 50").unwrap();
+    let ids = evaluate_filter(&f, &idx);
+    assert!(ids.is_empty());
 }

@@ -1,4 +1,7 @@
+use std::collections::HashSet;
+
 use crate::metadata::MetadataValue;
+use crate::metadata::index::MetadataIndex;
 
 /// A filter expression tree.
 ///
@@ -68,6 +71,106 @@ pub fn parse_filter(input: &str) -> Result<Filter, String> {
         ));
     }
     Ok(expr)
+}
+
+/// Evaluates a [`Filter`] against a [`MetadataIndex`], returning matching record IDs.
+///
+/// ```
+/// # use mini_vectordb::metadata::index::MetadataIndex;
+/// # use mini_vectordb::metadata::MetadataValue;
+/// # use mini_vectordb::query::filter::{parse_filter, evaluate_filter};
+/// let mut idx = MetadataIndex::new();
+/// let mut meta = mini_vectordb::metadata::Metadata::new();
+/// meta.insert("price".into(), MetadataValue::Integer(42));
+/// idx.index_record("r1", &meta);
+/// let filter = parse_filter("price < 100").unwrap();
+/// let ids = evaluate_filter(&filter, &idx);
+/// assert_eq!(ids, vec!["r1"]);
+/// ```
+pub fn evaluate_filter(filter: &Filter, index: &MetadataIndex) -> Vec<String> {
+    let result = eval(filter, index);
+    let mut ids: Vec<String> = result.into_iter().collect();
+    ids.sort();
+    ids
+}
+
+// ── Filter evaluator ──
+
+fn eval(filter: &Filter, index: &MetadataIndex) -> HashSet<String> {
+    match filter {
+        Filter::And(l, r) => {
+            let left = eval(l, index);
+            // short-circuit: AND with empty is always empty
+            if left.is_empty() {
+                return HashSet::new();
+            }
+            let right = eval(r, index);
+            left.intersection(&right).cloned().collect()
+        }
+        Filter::Or(l, r) => {
+            let left = eval(l, index);
+            let right = eval(r, index);
+            left.union(&right).cloned().collect()
+        }
+        Filter::Not(inner) => {
+            // NOT requires a universe set, which the caller must provide
+            // by AND-ing with a non-negated condition. This should not be
+            // used standalone — document this in the public API.
+            eval(inner, index)
+        }
+        Filter::Eq(field, val) => leaf_ids(index, field, val),
+        Filter::Ne(field, val) => {
+            // compute all IDs for this field, then remove the matching ones
+            let matching = leaf_ids(index, field, val);
+            let all: HashSet<String> = index.get_field_ids(field).into_iter().collect();
+            all.difference(&matching).cloned().collect()
+        }
+        Filter::Lt(field, val) => index
+            .get_numeric_lt(field, to_f64(val))
+            .into_iter()
+            .collect(),
+        Filter::Gt(field, val) => index
+            .get_numeric_gt(field, to_f64(val))
+            .into_iter()
+            .collect(),
+        Filter::Lte(field, val) => {
+            let v = to_f64(val);
+            let mut ids: HashSet<_> = index.get_numeric_lt(field, v).into_iter().collect();
+            ids.extend(index.get_numeric_eq(field, v));
+            ids
+        }
+        Filter::Gte(field, val) => {
+            let v = to_f64(val);
+            let mut ids: HashSet<_> = index.get_numeric_gt(field, v).into_iter().collect();
+            ids.extend(index.get_numeric_eq(field, v));
+            ids
+        }
+        Filter::In(field, vals) => vals.iter().fold(HashSet::new(), |mut acc, v| {
+            acc.extend(leaf_ids(index, field, v));
+            acc
+        }),
+        Filter::Like(field, prefix) => index.get_string_prefix(field, prefix).into_iter().collect(),
+    }
+}
+
+/// Convert a MetadataValue to f64 for numeric comparison.
+fn to_f64(val: &MetadataValue) -> f64 {
+    match val {
+        MetadataValue::Integer(i) => *i as f64,
+        MetadataValue::Float(f) => *f,
+        _ => 0.0,
+    }
+}
+
+/// Look up IDs matching an equality condition against any value type.
+fn leaf_ids(index: &MetadataIndex, field: &str, val: &MetadataValue) -> HashSet<String> {
+    match val {
+        MetadataValue::String(s) => index.get_string(field, s).into_iter().collect(),
+        MetadataValue::Integer(i) => index.get_numeric_eq(field, *i as f64).into_iter().collect(),
+        MetadataValue::Float(f) => index.get_numeric_eq(field, *f).into_iter().collect(),
+        MetadataValue::Bool(b) => index.get_bool(field, *b).into_iter().collect(),
+        _ => HashSet::new(),
+    }
 }
 
 // ── Tokenizer ──

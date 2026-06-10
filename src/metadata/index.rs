@@ -203,7 +203,32 @@ impl MetadataIndex {
             .unwrap_or_default()
     }
 
-    /// Remove all entries for a given field from every index. O(1).
+    /// Get all IDs where string field value starts with prefix. O(N_field).
+    pub fn get_string_prefix(&self, field: &str, prefix: &str) -> Vec<String> {
+        let Some(map) = self.string_index.get(field) else {
+            return Vec::new();
+        };
+        map.iter()
+            .filter(|(k, _)| k.starts_with(prefix))
+            .flat_map(|(_, ids)| ids.iter().cloned())
+            .collect()
+    }
+
+    /// Get all IDs indexed under any value of a given field.
+    pub(crate) fn get_field_ids(&self, field: &str) -> Vec<String> {
+        let mut ids: Vec<String> = Vec::new();
+        if let Some(map) = self.string_index.get(field) {
+            ids.extend(map.values().flat_map(|v| v.iter().cloned()));
+        }
+        if let Some(tree) = self.numeric_index.get(field) {
+            ids.extend(tree.values().flat_map(|v| v.iter().cloned()));
+        }
+        if let Some((t, f)) = self.bool_index.get(field) {
+            ids.extend(t.iter().cloned());
+            ids.extend(f.iter().cloned());
+        }
+        ids
+    }
     pub fn clear_field(&mut self, field: &str) {
         self.string_index.remove(field);
         self.numeric_index.remove(field);
