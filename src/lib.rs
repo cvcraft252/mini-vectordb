@@ -17,6 +17,8 @@ use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
 use crate::index::flat::FlatIndex;
 use crate::index::{Index, SearchResult};
+use crate::metadata::index::MetadataIndex;
+use crate::query::filter::parse_filter;
 use crate::storage::PersistentStorage;
 use crate::storage::bin_store::BinStorage;
 use crate::storage::json_store::JsonStorage;
@@ -180,6 +182,57 @@ impl VectorDB {
             .read()
             .expect("RwLock is never poisoned; no panics in read-locked sections")
             .search_batch(queries, top_k, metric)
+    }
+
+    /// Search with a metadata filter applied before distance computation.
+    ///
+    /// The filter reduces the candidate set, then vector search runs only
+    /// on the remaining records. Faster than search-then-filter when the
+    /// filter is selective (matches < 50% of records).
+    ///
+    /// # Errors
+    /// Returns `VectorDBError::Other` if the filter expression is malformed.
+    ///
+    /// ```
+    /// # use mini_vectordb::VectorDB;
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::core::metric::DistanceMetric;
+    /// # use mini_vectordb::metadata::MetadataValue;
+    /// let db = VectorDB::new();
+    /// let mut meta = mini_vectordb::metadata::Metadata::new();
+    /// meta.insert("cat".into(), MetadataValue::String("book".into()));
+    /// db.insert(Record::with_metadata("r1", vec![1.0], meta)).unwrap();
+    /// let results = db.search_filtered(
+    ///     &[1.0], 5, DistanceMetric::Euclidean, "cat = \"book\""
+    /// ).unwrap();
+    /// assert_eq!(results.len(), 1);
+    /// ```
+    pub fn search_filtered(
+        &self,
+        query: &[f32],
+        top_k: usize,
+        metric: DistanceMetric,
+        filter_expr: &str,
+    ) -> Result<Vec<SearchResult>> {
+        let filter = parse_filter(filter_expr)
+            .map_err(|e| VectorDBError::Other(format!("filter parse error: {e}")))?;
+
+        let index = self
+            .index
+            .read()
+            .expect("RwLock is never poisoned; no panics in read-locked sections");
+
+        // Build a temporary metadata index from the current record set.
+        // Under the read lock the snapshot is consistent.
+        let records = index.records();
+        let mut meta_idx = MetadataIndex::new();
+        for r in &records {
+            meta_idx.index_record(&r.id, &r.metadata);
+        }
+
+        crate::query::planner::execute_filtered_search(
+            query, top_k, metric, &filter, &meta_idx, &**index,
+        )
     }
 
     /// Look up a record by ID. Acquires a read lock.

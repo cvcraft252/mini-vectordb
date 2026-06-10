@@ -319,3 +319,106 @@ fn auto_save_captures_full_state_after_multiple_ops() {
     assert_eq!(c.vector, vec![9.0]);
     fs::remove_file(path).unwrap();
 }
+
+// ── filtered search ──
+
+fn setup_filtered_db() -> VectorDB {
+    let db = VectorDB::new();
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), MetadataValue::String("book".into()));
+    meta.insert("price".into(), MetadataValue::Integer(30));
+    meta.insert("color".into(), MetadataValue::String("red".into()));
+    db.insert(Record::with_metadata("r1", vec![1.0, 0.0], meta))
+        .unwrap();
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), MetadataValue::String("book".into()));
+    meta.insert("price".into(), MetadataValue::Integer(80));
+    meta.insert("color".into(), MetadataValue::String("blue".into()));
+    db.insert(Record::with_metadata("r2", vec![5.0, 0.0], meta))
+        .unwrap();
+    let mut meta = Metadata::new();
+    meta.insert("category".into(), MetadataValue::String("film".into()));
+    meta.insert("price".into(), MetadataValue::Integer(50));
+    meta.insert("color".into(), MetadataValue::String("red".into()));
+    db.insert(Record::with_metadata("r3", vec![9.0, 0.0], meta))
+        .unwrap();
+    db
+}
+
+#[test]
+fn filtered_search_string_equality() {
+    let db = setup_filtered_db();
+    let results = db
+        .search_filtered(
+            &[0.0, 0.0],
+            10,
+            DistanceMetric::Euclidean,
+            "category = \"book\"",
+        )
+        .unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].id, "r1");
+    assert_eq!(results[1].id, "r2");
+}
+
+#[test]
+fn filtered_search_numeric_range() {
+    let db = setup_filtered_db();
+    let results = db
+        .search_filtered(&[0.0, 0.0], 10, DistanceMetric::Euclidean, "price < 50")
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].id, "r1");
+}
+
+#[test]
+fn filtered_search_and_conditions() {
+    let db = setup_filtered_db();
+    let results = db
+        .search_filtered(
+            &[0.0, 0.0],
+            10,
+            DistanceMetric::Euclidean,
+            "category = \"book\" AND color = \"red\"",
+        )
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].id, "r1");
+}
+
+#[test]
+fn filtered_search_no_match_returns_empty() {
+    let db = setup_filtered_db();
+    let results = db
+        .search_filtered(
+            &[0.0, 0.0],
+            10,
+            DistanceMetric::Euclidean,
+            "category = \"music\"",
+        )
+        .unwrap();
+    assert!(results.is_empty());
+}
+
+#[test]
+fn filtered_search_returns_closest_first() {
+    let db = setup_filtered_db();
+    let results = db
+        .search_filtered(
+            &[0.0, 0.0],
+            10,
+            DistanceMetric::Euclidean,
+            "color = \"red\"",
+        )
+        .unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].id, "r1");
+    assert_eq!(results[1].id, "r3");
+}
+
+#[test]
+fn filtered_search_bad_syntax_returns_error() {
+    let db = VectorDB::new();
+    let result = db.search_filtered(&[1.0], 5, DistanceMetric::Euclidean, "category =");
+    assert!(result.is_err());
+}
