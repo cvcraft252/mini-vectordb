@@ -1,6 +1,3 @@
-// core/record.rs
-// The fundamental data unit: a float32 vector with typed metadata.
-
 use serde::{Deserialize, Serialize};
 
 use crate::metadata::Metadata;
@@ -19,7 +16,8 @@ impl Record {
     /// Create a record with no metadata.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```rust
+    /// # use mini_vectordb::core::record::Record;
     /// let r = Record::new("doc-1", vec![1.0, 2.0, 3.0]);
     /// assert_eq!(r.id, "doc-1");
     /// assert!(r.metadata.is_empty());
@@ -35,8 +33,9 @@ impl Record {
     /// Create a record with typed metadata attached.
     ///
     /// # Examples
-    /// ```ignore
-    /// use mini_vectordb::metadata::MetadataValue;
+    /// ```rust
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::metadata::{Metadata, MetadataValue};
     ///
     /// let mut meta = Metadata::new();
     /// meta.insert("price".into(), MetadataValue::Integer(42));

@@ -1,20 +1,15 @@
-// index/flat.rs
-// Brute-force exact nearest neighbor index. O(N·D) per search.
-
 use crate::core::metric::DistanceMetric;
 use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
 use crate::index::{Index, SearchResult};
 
+// Dimension is locked after the first insert to prevent accidental
+// mixing of differently-shaped embeddings in one index.
+//
+// For cosine search we precompute and store each record's L2 norm
+// in `norms`, avoiding `2*N` sqrt calls per search. This is a
+// classic trick from the SIFT evaluation literature.
 /// Flat (brute-force) index. Every search scans all records.
-///
-/// # Notes
-/// Dimension is locked after the first insert to prevent accidental
-/// mixing of differently-shaped embeddings in one index.
-///
-/// For cosine search we precompute and store each record's L2 norm
-/// in `norms`, avoiding `2*N` sqrt calls per search. This is a
-/// classic trick from the SIFT evaluation literature.
 pub struct FlatIndex {
     /// All records in insertion order. O(1) push, O(N) delete (swap-remove).
     records: Vec<Record>,
@@ -34,7 +29,8 @@ impl FlatIndex {
     /// Create an empty index with no dimension constraint.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
+    /// # use mini_vectordb::index::{Index, flat::FlatIndex};
     /// let idx = FlatIndex::new();
     /// assert!(idx.is_empty());
     /// assert_eq!(idx.len(), 0);
@@ -47,22 +43,9 @@ impl FlatIndex {
         }
     }
 
+    // Marked `#[inline]` because the function body is ~4 FMAs, and
+    // the call overhead dominates for small-dimension vectors.
     /// Cosine distance using caller-supplied norms (no sqrt per record).
-    ///
-    /// # Arguments
-    /// * `query_norm` - Precomputed |query|, done once per search call.
-    /// * `query` - The query vector.
-    /// * `record_vec` - A stored record's vector.
-    /// * `record_norm` - Precomputed |record| from `self.norms[i]`.
-    ///
-    /// # Returns
-    /// Cosine distance in [0, 2]. Returns 0.0 if either norm is zero
-    /// (degenerate zero-vector — no meaningful direction, so we treat
-    /// it as "distance zero from everything" to avoid NaN propagation).
-    ///
-    /// # Notes
-    /// Marked `#[inline]` because the function body is ~4 FMAs, and
-    /// the call overhead dominates for small-dimension vectors.
     #[inline]
     fn cosine_with_norms(
         query_norm: f32,
@@ -82,35 +65,20 @@ impl FlatIndex {
         1.0 - dot / (query_norm * record_norm)
     }
 
+    // Using `fold` with a single accumulator instead of
+    // `map + sum` avoids an intermediate iterator state allocation.
+    // The difference is ~3ns for 128-dim, but it adds up in tight loops.
     /// Compute L2 norm: `sqrt(sum(v[i]²))`.
-    ///
-    /// # Arguments
-    /// * `v` - Vector to measure.
-    ///
-    /// # Notes
-    /// Using `fold` with a single accumulator instead of
-    /// `map + sum` avoids an intermediate iterator state allocation.
-    /// The difference is ~3ns for 128-dim, but it adds up in tight loops.
     #[inline]
     fn l2_norm(v: &[f32]) -> f32 {
         v.iter().fold(0.0f32, |acc, &x| acc + x * x).sqrt()
     }
 
+    // Uses `select_nth_unstable_by` for O(N) partial sort, which is
+    // faster than a binary heap (O(N log k)) for single queries.
+    // If we add batch query support later, a heap per query
+    // would be more ergonomic but ~2x slower at k=10.
     /// Extract top-k (index, distance) pairs from a full distance array.
-    ///
-    /// # Arguments
-    /// * `distances` - Array of (record_index, distance) pairs, one per record.
-    /// * `top_k` - Number of best results to keep.
-    ///
-    /// # Returns
-    /// Up to `top_k` pairs sorted by distance ascending. If top_k >= len,
-    /// returns all pairs sorted.
-    ///
-    /// # Notes
-    /// Uses `select_nth_unstable_by` for O(N) partial sort, which is
-    /// faster than a binary heap (O(N log k)) for single queries.
-    /// If we add batch query support later, a heap per query
-    /// would be more ergonomic but ~2x slower at k=10.
     fn select_top_k(mut distances: Vec<(usize, f32)>, top_k: usize) -> Vec<(usize, f32)> {
         // handle edge cases: nothing to select, or asking for everything
         let k = top_k.min(distances.len());

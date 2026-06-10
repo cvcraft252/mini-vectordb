@@ -1,9 +1,3 @@
-// metadata/index.rs
-// Inverted indexes over metadata fields for fast equality and range queries.
-// String fields use HashMap (O(1) exact match).
-// Numeric fields use BTreeMap (O(log N) range queries).
-// Bool fields use a simple (true_ids, false_ids) pair.
-
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound;
 
@@ -36,15 +30,11 @@ impl Ord for OrderedF64 {
     }
 }
 
+// String and numeric indexes are independent — a single record's
+// metadata fields appear in both if they contain both types.
+// Insert is O(log N) for numeric fields, O(1) amortized for strings.
+// The index stores only record IDs, not the records themselves.
 /// In-memory index for metadata-driven record filtering.
-///
-/// # Notes
-/// String and numeric indexes are independent — a single record's
-/// metadata fields appear in both if they contain both types.
-/// Insert is O(log N) for numeric fields, O(1) amortized for strings.
-///
-/// The index stores only record IDs (String), not the records
-/// themselves. Records live in the vector index.
 pub struct MetadataIndex {
     /// String equality index: field_name -> (value -> [ids]).
     string_index: HashMap<String, HashMap<String, Vec<String>>>,

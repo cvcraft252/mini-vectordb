@@ -1,8 +1,3 @@
-// storage/json_store.rs
-// JSON persistence for human-readable vector database dumps.
-// Uses serde_json with pretty-printing so the output is diffable
-// and debuggable with standard tools (cat, jq, python -m json.tool).
-
 use std::fs;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;

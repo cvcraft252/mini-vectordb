@@ -1,8 +1,3 @@
-// lib.rs
-// mini-vectordb public API root. Each module tree is exposed
-// individually so callers can import specific types without
-// pulling in everything (e.g. `use mini_vectordb::core::metric`).
-
 /// Core types: Record, DistanceMetric, errors.
 pub mod core;
 /// Index trait and implementations.
@@ -35,19 +30,14 @@ pub enum StorageFormat {
     Binary,
 }
 
+// Defaults to FlatIndex (brute-force exact search). The RwLock is
+// never held across await points (blocking API, no async).
 /// Thread-safe vector database backed by an in-memory index.
 ///
-/// # Notes
 /// Wraps the underlying index in `RwLock<Box<dyn Index>>` so multiple
 /// readers can search concurrently while writes (insert/delete/update)
 /// are serialized. The `dyn Index` trait object lets us swap the
 /// backend (e.g. FlatIndex → HnswIndex) without changing callers.
-///
-/// Defaults to `FlatIndex` (brute-force exact search). For larger
-/// datasets, a graph-based index would provide better throughput.
-///
-/// The `RwLock` is never held across await points (this is a blocking
-/// API, no async), so deadlocks are impossible under normal use.
 pub struct VectorDB {
     /// Protects all index access. Read lock for search/get/len,
     /// write lock for insert/delete/update/clear.
@@ -65,10 +55,11 @@ pub struct VectorDB {
 }
 
 impl VectorDB {
-    /// Create a new database with an empty brute-force index.
+    /// Create a database with an empty flat index.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
+    /// # use mini_vectordb::VectorDB;
     /// let db = VectorDB::new();
     /// assert_eq!(db.len(), 0);
     /// assert!(db.is_empty());
@@ -80,17 +71,11 @@ impl VectorDB {
         }
     }
 
-    /// Create a database that writes to disk after every mutation.
+    /// Create a database that auto-saves to disk after every mutation.
     ///
-    /// Every insert, delete, update, and clear triggers a full save
-    /// via the chosen format. For datasets under ~10k records this
-    /// overhead is < 1ms (binary) to < 10ms (JSON). Larger datasets
-    /// should use manual saves via the storage module instead.
-    ///
-    /// # Arguments
-    /// * `path` — File to write. Created or truncated on each save.
-    /// * `format` — `Json` for human-readable debugging; `Binary`
-    ///   for compact storage and faster load times.
+    /// For datasets under ~10k records this overhead is < 1ms (binary)
+    /// to < 10ms (JSON). Larger datasets should use manual saves via
+    /// the storage module instead.
     pub fn with_persistence(path: impl Into<PathBuf>, format: StorageFormat) -> Self {
         Self {
             index: RwLock::new(Box::new(FlatIndex::new())),
@@ -123,24 +108,21 @@ impl VectorDB {
 
     /// Insert a record. Acquires a write lock (blocks concurrent writes).
     ///
-    /// # Arguments
-    /// * `record` - Must have a unique ID. Vector dimension must match
-    ///   existing records, or any dimension if the database is empty.
-    ///   ID uniqueness is not enforced — two records with the same ID
-    ///   overwrite behavior depends on the index, but callers should
-    ///   ensure uniqueness.
-    ///
-    /// # Returns
-    /// `Ok(())` on success.
-    ///
     /// # Errors
     /// `DimensionMismatch` if vector dimension differs from stored vectors.
     /// `EmptyVector` if the vector has zero elements.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::VectorDB;
+    /// # use mini_vectordb::core::VectorDBError;
+    /// # fn main() -> Result<(), VectorDBError> {
+    /// let db = VectorDB::new();
     /// let r = Record::new("doc1", vec![0.1, 0.2, 0.3]);
     /// db.insert(r)?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn insert(&self, record: Record) -> Result<()> {
         let mut index = self
@@ -156,24 +138,24 @@ impl VectorDB {
     /// Search for the top_k most similar vectors. Acquires a read lock
     /// (multiple concurrent searches are allowed).
     ///
-    /// # Arguments
-    /// * `query` - The query vector. Dimension must match stored vectors.
-    /// * `top_k` - Maximum results to return. If 0, returns empty.
-    /// * `metric` - Distance function controlling similarity measurement.
-    ///
-    /// # Returns
-    /// Up to `top_k` results sorted by distance ascending (closest first).
-    /// Empty `Vec` if the database is empty or `top_k` is 0.
-    ///
     /// # Errors
     /// `DimensionMismatch` if query dimension doesn't match stored vectors.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::core::metric::DistanceMetric;
+    /// # use mini_vectordb::VectorDB;
+    /// # use mini_vectordb::core::VectorDBError;
+    /// # fn main() -> Result<(), VectorDBError> {
+    /// # let db = VectorDB::new();
+    /// # db.insert(Record::new("a", vec![0.1, 0.2, 0.3]))?;
     /// let results = db.search(&[0.1, 0.2, 0.3], 5, DistanceMetric::Cosine)?;
     /// for r in &results {
     ///     println!("{} -> dist={:.4}", r.id, r.distance);
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn search(
         &self,
@@ -188,14 +170,6 @@ impl VectorDB {
     }
 
     /// Batch search — parallel across queries under a single read lock.
-    ///
-    /// # Arguments
-    /// * `queries` — each query must match stored dimension.
-    /// * `top_k` — results per query.
-    /// * `metric` — distance function for all queries.
-    ///
-    /// # Returns
-    /// One result set per query, in input order.
     pub fn search_batch(
         &self,
         queries: &[Vec<f32>],
@@ -210,18 +184,19 @@ impl VectorDB {
 
     /// Look up a record by ID. Acquires a read lock.
     ///
-    /// # Arguments
-    /// * `id` - Record identifier.
-    ///
-    /// # Returns
-    /// `Ok(Some(record))` if found, `Ok(None)` if not. The returned
-    /// Record is cloned from internal storage.
-    ///
     /// # Examples
-    /// ```ignore
+    /// ```
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::VectorDB;
+    /// # use mini_vectordb::core::VectorDBError;
+    /// # fn main() -> Result<(), VectorDBError> {
+    /// # let db = VectorDB::new();
+    /// # db.insert(Record::new("doc1", vec![0.1, 0.2, 0.3]))?;
     /// if let Some(r) = db.get("doc1")? {
     ///     assert_eq!(r.id, "doc1");
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn get(&self, id: &str) -> Result<Option<Record>> {
         self.index
@@ -233,16 +208,17 @@ impl VectorDB {
     /// Remove a record by ID. Acquires a write lock.
     /// Silently succeeds if the ID doesn't exist.
     ///
-    /// # Arguments
-    /// * `id` - Record identifier to remove.
-    ///
-    /// # Returns
-    /// `Ok(())` — deliberately infallible so callers can chain deletes
-    /// without checking existence first.
-    ///
     /// # Examples
-    /// ```ignore
+    /// ```
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::VectorDB;
+    /// # use mini_vectordb::core::VectorDBError;
+    /// # fn main() -> Result<(), VectorDBError> {
+    /// # let db = VectorDB::new();
+    /// # db.insert(Record::new("doc1", vec![0.1, 0.2, 0.3]))?;
     /// db.delete("doc1")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn delete(&self, id: &str) -> Result<()> {
         let mut index = self
@@ -256,29 +232,26 @@ impl VectorDB {
     /// Replace a record's vector while keeping its ID and metadata intact.
     /// Acquires a write lock.
     ///
-    /// # Arguments
-    /// * `id` - Record to update. Must exist.
-    /// * `vector` - New vector. Dimension must match the database.
-    ///
-    /// # Returns
-    /// `Ok(())` on success.
-    ///
     /// # Errors
     /// `NotFound` if no record with this ID exists.
     /// `DimensionMismatch` if the new vector has wrong dimension.
     /// `EmptyVector` if the new vector is empty.
     ///
-    /// # Implementation
-    /// Internally does delete-then-insert: reads the old record to
-    /// preserve metadata, removes it, then inserts the updated version.
-    /// This two-step approach is O(N) due to the internal linear scan
-    /// in FlatIndex, but avoids adding a dedicated "replace" path to
-    /// the Index trait.
-    ///
     /// # Examples
-    /// ```ignore
-    /// db.update("doc1", vec![0.5, 0.6, 0.7])?;
     /// ```
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::VectorDB;
+    /// # use mini_vectordb::core::VectorDBError;
+    /// # fn main() -> Result<(), VectorDBError> {
+    /// # let db = VectorDB::new();
+    /// # db.insert(Record::new("doc1", vec![0.1, 0.2, 0.3]))?;
+    /// db.update("doc1", vec![0.5, 0.6, 0.7])?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    // Delete-then-insert: reads old record for metadata, deletes it,
+    // inserts updated version. O(N) with FlatIndex but avoids adding
+    // a dedicated "replace" path to the Index trait.
     pub fn update(&self, id: &str, vector: Vec<f32>) -> Result<()> {
         let mut index = self
             .index
@@ -319,8 +292,17 @@ impl VectorDB {
     /// Number of records in the database. Acquires a read lock.
     ///
     /// # Examples
-    /// ```ignore
-    /// assert_eq!(db.len(), 42);
+    /// ```
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::VectorDB;
+    /// # use mini_vectordb::core::VectorDBError;
+    /// # fn main() -> Result<(), VectorDBError> {
+    /// # let db = VectorDB::new();
+    /// # db.insert(Record::new("a", vec![1.0]))?;
+    /// # db.insert(Record::new("b", vec![2.0]))?;
+    /// assert_eq!(db.len(), 2);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn len(&self) -> usize {
         self.index
@@ -332,7 +314,8 @@ impl VectorDB {
     /// True when the database has zero records. Acquires a read lock.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
+    /// # use mini_vectordb::VectorDB;
     /// assert!(VectorDB::new().is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
@@ -343,18 +326,24 @@ impl VectorDB {
     /// Remove all records and reset the dimension constraint.
     /// Acquires a write lock.
     ///
-    /// # Implementation
-    /// Replaces the internal index with a fresh `FlatIndex`. This is
-    /// simpler than draining records one-by-one and automatically resets
-    /// dimension tracking.
-    ///
     /// # Examples
-    /// ```ignore
+    /// ```
+    /// # use mini_vectordb::core::record::Record;
+    /// # use mini_vectordb::VectorDB;
+    /// # use mini_vectordb::core::VectorDBError;
+    /// # fn main() -> Result<(), VectorDBError> {
+    /// # let db = VectorDB::new();
+    /// # db.insert(Record::new("a", vec![1.0, 2.0, 3.0]))?;
     /// db.clear()?;
     /// assert!(db.is_empty());
     /// // dimension is reset — new vectors can have any shape
     /// db.insert(Record::new("fresh", vec![1.0, 2.0, 3.0]))?;
+    /// # Ok(())
+    /// # }
     /// ```
+    // Replaces the entire index with a fresh FlatIndex — simpler than
+    // draining records one-by-one and automatically resets dimension
+    // tracking.
     pub fn clear(&self) -> Result<()> {
         let mut index = self
             .index
@@ -368,7 +357,6 @@ impl VectorDB {
     }
 }
 
-/// `VectorDB::new()` provides a sensible default (flat index, empty).
 impl Default for VectorDB {
     fn default() -> Self {
         Self::new()

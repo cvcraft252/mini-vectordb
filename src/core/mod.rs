@@ -1,7 +1,4 @@
-// core/mod.rs
-// Central error type and module root for the vector database.
-
-/// Distance metrics: Cosine, Euclidean, DotProduct, Manhattan.
+//! Core types: error handling, records, and distance metrics.
 pub mod metric;
 /// Vector record type with metadata support.
 pub mod record;

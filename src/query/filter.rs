@@ -1,7 +1,3 @@
-// query/filter.rs
-// Filter AST and expression parser over metadata fields.
-// SQL-ish syntax parsed into an AST for evaluation against MetadataIndex.
-
 use crate::metadata::MetadataValue;
 
 /// A filter expression tree.
@@ -50,8 +46,9 @@ pub enum Filter {
 
 /// Parse a filter expression string into an AST.
 ///
-/// ```ignore
-/// let filter = parse_filter("category = \"book\" AND price < 50")?;
+/// ```
+/// # use mini_vectordb::query::filter::parse_filter;
+/// let filter = parse_filter("category = \"book\" AND price < 50").unwrap();
 /// ```
 ///
 /// # Errors

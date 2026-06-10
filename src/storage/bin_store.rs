@@ -1,8 +1,3 @@
-// storage/bin_store.rs
-// Compact binary persistence. ~4x smaller and ~10x faster than JSON.
-// Custom format with magic-number header, raw f32 vectors, and
-// length-prefixed strings instead of quoted JSON overhead.
-
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
