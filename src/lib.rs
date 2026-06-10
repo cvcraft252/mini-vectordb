@@ -9,6 +9,8 @@ pub mod core;
 pub mod index;
 /// Typed metadata schema.
 pub mod metadata;
+/// Query engine: filter parsing, inverted index, query planner.
+pub mod query;
 /// Persistent storage backends (JSON, binary, memory-mapped).
 pub mod storage;
 
