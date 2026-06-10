@@ -1,9 +1,9 @@
 // core/record.rs
-// The fundamental data unit: a float32 vector with string metadata.
-
-use std::collections::HashMap;
+// The fundamental data unit: a float32 vector with typed metadata.
 
 use serde::{Deserialize, Serialize};
+
+use crate::metadata::Metadata;
 
 /// One vector + its identity + optional key-value tags.
 /// Callers own ID generation — we never auto-assign.
@@ -12,7 +12,7 @@ pub struct Record {
     pub id: String,
     pub vector: Vec<f32>,
     #[serde(default)]
-    pub metadata: HashMap<String, String>,
+    pub metadata: Metadata,
 }
 
 impl Record {
@@ -28,27 +28,22 @@ impl Record {
         Self {
             id: id.into(),
             vector,
-            metadata: HashMap::new(),
+            metadata: Metadata::new(),
         }
     }
 
-    /// Create a record with key-value metadata attached.
-    ///
-    /// Metadata is stored as `HashMap<String, String>` — flat text tags
-    /// that survive JSON round-trips. For typed fields (int, float, bool),
-    /// serialize to string on insert and parse on read.
+    /// Create a record with typed metadata attached.
     ///
     /// # Examples
     /// ```ignore
-    /// let meta = HashMap::from([("category".into(), "book".into())]);
+    /// use mini_vectordb::metadata::MetadataValue;
+    ///
+    /// let mut meta = Metadata::new();
+    /// meta.insert("price".into(), MetadataValue::Integer(42));
+    /// meta.insert("label".into(), MetadataValue::String("book".into()));
     /// let r = Record::with_metadata("doc-2", vec![1.0], meta);
-    /// assert_eq!(r.metadata.get("category").unwrap(), "book");
     /// ```
-    pub fn with_metadata(
-        id: impl Into<String>,
-        vector: Vec<f32>,
-        metadata: HashMap<String, String>,
-    ) -> Self {
+    pub fn with_metadata(id: impl Into<String>, vector: Vec<f32>, metadata: Metadata) -> Self {
         Self {
             id: id.into(),
             vector,

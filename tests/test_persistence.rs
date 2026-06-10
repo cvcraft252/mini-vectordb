@@ -1,9 +1,9 @@
 // JSON and binary persistence round-trip tests.
 
-use std::collections::HashMap;
 use std::fs;
 
 use mini_vectordb::core::record::Record;
+use mini_vectordb::metadata::{Metadata, MetadataValue};
 use mini_vectordb::storage::PersistentStorage;
 use mini_vectordb::storage::bin_store::BinStorage;
 use mini_vectordb::storage::json_store::JsonStorage;
@@ -61,9 +61,9 @@ fn json_save_and_load_preserves_vectors_bit_exact() {
 #[test]
 fn json_save_and_load_preserves_metadata() {
     let path = temp_path("meta", "json");
-    let mut meta = HashMap::new();
-    meta.insert("category".to_string(), "book".to_string());
-    meta.insert("year".to_string(), "2024".to_string());
+    let mut meta = Metadata::new();
+    meta.insert("category".to_string(), MetadataValue::String("book".into()));
+    meta.insert("year".to_string(), MetadataValue::Integer(2024));
     let records = vec![Record::with_metadata("doc", vec![1.0, 2.0], meta)];
     JsonStorage::from_records(records.clone())
         .save(&path)
@@ -71,8 +71,14 @@ fn json_save_and_load_preserves_metadata() {
     let loaded = JsonStorage::load(&path).unwrap();
     let loaded_records = loaded.into_records();
     assert_eq!(loaded_records.len(), 1);
-    assert_eq!(loaded_records[0].metadata.get("category").unwrap(), "book");
-    assert_eq!(loaded_records[0].metadata.get("year").unwrap(), "2024");
+    assert_eq!(
+        loaded_records[0].metadata.get("category").unwrap(),
+        &MetadataValue::String("book".into())
+    );
+    assert_eq!(
+        loaded_records[0].metadata.get("year").unwrap(),
+        &MetadataValue::Integer(2024)
+    );
     cleanup(&path);
 }
 
@@ -153,9 +159,9 @@ fn bin_save_and_load_preserves_vectors_bit_exact() {
 #[test]
 fn bin_save_and_load_preserves_metadata() {
     let path = temp_path("meta", "bin");
-    let mut meta = HashMap::new();
-    meta.insert("category".to_string(), "book".to_string());
-    meta.insert("year".to_string(), "2024".to_string());
+    let mut meta = Metadata::new();
+    meta.insert("category".to_string(), MetadataValue::String("book".into()));
+    meta.insert("year".to_string(), MetadataValue::Integer(2024));
     let records = vec![Record::with_metadata("doc", vec![1.0, 2.0], meta)];
     BinStorage::from_records(records.clone())
         .save(&path)
@@ -163,8 +169,14 @@ fn bin_save_and_load_preserves_metadata() {
     let loaded = BinStorage::load(&path).unwrap();
     let loaded_records = loaded.into_records();
     assert_eq!(loaded_records.len(), 1);
-    assert_eq!(loaded_records[0].metadata.get("category").unwrap(), "book");
-    assert_eq!(loaded_records[0].metadata.get("year").unwrap(), "2024");
+    assert_eq!(
+        loaded_records[0].metadata.get("category").unwrap(),
+        &MetadataValue::String("book".into())
+    );
+    assert_eq!(
+        loaded_records[0].metadata.get("year").unwrap(),
+        &MetadataValue::Integer(2024)
+    );
     cleanup(&path);
 }
 

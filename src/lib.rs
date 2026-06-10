@@ -7,6 +7,8 @@
 pub mod core;
 /// Index trait and implementations.
 pub mod index;
+/// Typed metadata schema.
+pub mod metadata;
 /// Persistent storage backends (JSON, binary, memory-mapped).
 pub mod storage;
 

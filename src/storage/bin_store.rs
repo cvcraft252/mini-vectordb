@@ -10,6 +10,7 @@ use std::{fs, io};
 
 use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
+use crate::metadata::MetadataValue;
 use crate::storage::PersistentStorage;
 
 /// Magic bytes: "MVDB" in ASCII (big-endian layout in hex).
@@ -122,7 +123,11 @@ impl PersistentStorage for BinStorage {
             for (k, v) in &r.metadata {
                 write_str(&mut w, k)
                     .map_err(|e| VectorDBError::Other(format!("write meta key: {e}")))?;
-                write_str(&mut w, v)
+                // serialize MetadataValue to JSON string so all types
+                // (Integer, Float, Bool, List, Null) survive round-trip
+                let json = serde_json::to_string(v)
+                    .map_err(|e| VectorDBError::Other(format!("meta serialize: {e}")))?;
+                write_str(&mut w, &json)
                     .map_err(|e| VectorDBError::Other(format!("write meta val: {e}")))?;
             }
         }
@@ -189,8 +194,10 @@ impl PersistentStorage for BinStorage {
             for _ in 0..meta_len {
                 let key = read_string(&mut r)
                     .map_err(|e| VectorDBError::Other(format!("read meta key: {e}")))?;
-                let val = read_string(&mut r)
+                let json = read_string(&mut r)
                     .map_err(|e| VectorDBError::Other(format!("read meta val: {e}")))?;
+                let val: MetadataValue = serde_json::from_str(&json)
+                    .map_err(|e| VectorDBError::Other(format!("meta parse: {e}")))?;
                 metadata.insert(key, val);
             }
 

@@ -1,6 +1,5 @@
 // VectorDB integration tests.
 
-use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 
@@ -9,6 +8,7 @@ use mini_vectordb::VectorDB;
 use mini_vectordb::core::VectorDBError;
 use mini_vectordb::core::metric::DistanceMetric;
 use mini_vectordb::core::record::Record;
+use mini_vectordb::metadata::{Metadata, MetadataValue};
 use mini_vectordb::storage::PersistentStorage;
 use mini_vectordb::storage::bin_store::BinStorage;
 use mini_vectordb::storage::json_store::JsonStorage;
@@ -17,7 +17,7 @@ fn make_record(id: &str, vec: Vec<f32>) -> Record {
     Record::new(id, vec)
 }
 
-fn make_record_with_meta(id: &str, vec: Vec<f32>, meta: HashMap<String, String>) -> Record {
+fn make_record_with_meta(id: &str, vec: Vec<f32>, meta: Metadata) -> Record {
     Record::with_metadata(id, vec, meta)
 }
 
@@ -89,17 +89,23 @@ fn delete_nonexistent_id_is_noop() {
 #[test]
 fn update_preserves_existing_metadata() {
     let db = VectorDB::new();
-    let mut meta = HashMap::new();
-    meta.insert("category".to_string(), "book".to_string());
-    meta.insert("year".to_string(), "2024".to_string());
+    let mut meta = Metadata::new();
+    meta.insert("category".to_string(), MetadataValue::String("book".into()));
+    meta.insert("year".to_string(), MetadataValue::Integer(2024));
     db.insert(make_record_with_meta("doc", vec![1.0, 2.0], meta))
         .unwrap();
 
     db.update("doc", vec![3.0, 4.0]).unwrap();
     let got = db.get("doc").unwrap().unwrap();
     assert_eq!(got.vector, vec![3.0, 4.0]);
-    assert_eq!(got.metadata.get("category").unwrap(), "book");
-    assert_eq!(got.metadata.get("year").unwrap(), "2024");
+    assert_eq!(
+        got.metadata.get("category").unwrap(),
+        &MetadataValue::String("book".into())
+    );
+    assert_eq!(
+        got.metadata.get("year").unwrap(),
+        &MetadataValue::Integer(2024)
+    );
 }
 
 #[test]
