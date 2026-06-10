@@ -1,5 +1,7 @@
 // HNSW graph-based index tests.
 
+use std::fs;
+
 use mini_vectordb::core::VectorDBError;
 use mini_vectordb::core::metric::DistanceMetric;
 use mini_vectordb::core::record::Record;
@@ -195,4 +197,69 @@ fn recall_vs_flat_on_100_random_vectors() {
         recall > 0.10,
         "recall too low: {recall:.2} (expected > 0.10)"
     );
+}
+
+// ── persistence ──
+
+#[test]
+fn save_load_empty_index() {
+    let path = "target/test_hnsw_empty.bin";
+    let idx = HnswIndex::new();
+    idx.save(path).unwrap();
+    let loaded = HnswIndex::load(path).unwrap();
+    assert!(loaded.is_empty());
+    assert_eq!(loaded.len(), 0);
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn save_load_single_node() {
+    let path = "target/test_hnsw_single.bin";
+    let mut idx = HnswIndex::new();
+    idx.insert(make_record("x", vec![1.0, 2.0, 3.0])).unwrap();
+    idx.save(path).unwrap();
+
+    let loaded = HnswIndex::load(path).unwrap();
+    assert_eq!(loaded.len(), 1);
+    let r = loaded.get("x").unwrap().unwrap();
+    assert_eq!(r.vector, vec![1.0, 2.0, 3.0]);
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn save_load_search_results_identical() {
+    let path = "target/test_hnsw_identical.bin";
+    let mut idx = HnswIndex::with_params(16, 100);
+    for i in 0..50 {
+        let angle = i as f32 * 0.2;
+        idx.insert(make_record(&format!("v{i}"), vec![angle.cos(), angle.sin()]))
+            .unwrap();
+    }
+
+    let query = vec![0.5, 0.8];
+    let before = idx
+        .search(&query, 5, DistanceMetric::Euclidean)
+        .unwrap();
+
+    idx.save(path).unwrap();
+    let loaded = HnswIndex::load(path).unwrap();
+
+    let after = loaded
+        .search(&query, 5, DistanceMetric::Euclidean)
+        .unwrap();
+
+    assert_eq!(before.len(), after.len());
+    for (a, b) in before.iter().zip(after.iter()) {
+        assert_eq!(a.id, b.id);
+        assert!((a.distance - b.distance).abs() < 1e-5);
+    }
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn load_rejects_bad_magic() {
+    let path = "target/test_hnsw_bad.bin";
+    fs::write(path, b"not an HNSW file").unwrap();
+    assert!(HnswIndex::load(path).is_err());
+    fs::remove_file(path).unwrap();
 }
