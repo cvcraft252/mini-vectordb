@@ -35,9 +35,16 @@ cargo run
 ```
 
 ```bash
-curl -X POST localhost:3000/insert -H 'Content-Type: application/json' -d '{"id":"v1","vector":[0.1,0.2]}'
-curl -X POST localhost:3000/search -H 'Content-Type: application/json' -d '{"vector":[0.1,0.2],"top_k":3}'
-curl localhost:3000/get/v1
+$ curl -X POST localhost:3000/insert -H 'Content-Type: application/json' \
+    -d '{"id":"v1","vector":[1,2,3]}'
+ok
+
+$ curl -X POST localhost:3000/search -H 'Content-Type: application/json' \
+    -d '{"vector":[1,2,3],"top_k":1}'
+[{"id":"v1","distance":0.0}]
+
+$ curl localhost:3000/get/v1
+{"id":"v1","vector":[1.0,2.0,3.0]}
 ```
 
 Full API: `POST /insert`, `GET /get/:id`, `POST /search`, `DELETE /delete/:id`, `POST /update`, `POST /insert_batch`, `POST /search_batch`, `GET /health`, `GET /stats`.
