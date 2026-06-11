@@ -204,6 +204,26 @@ impl MetadataIndex {
         self.string_index.len()
     }
 
+    pub fn get_string_contains(&self, field: &str, substr: &str) -> Vec<String> {
+        let Some(map) = self.string_index.get(field) else {
+            return Vec::new();
+        };
+        map.iter()
+            .filter(|(k, _)| k.contains(substr))
+            .flat_map(|(_, ids)| ids.iter().cloned())
+            .collect()
+    }
+
+    pub fn get_string_suffix(&self, field: &str, suffix: &str) -> Vec<String> {
+        let Some(map) = self.string_index.get(field) else {
+            return Vec::new();
+        };
+        map.iter()
+            .filter(|(k, _)| k.ends_with(suffix))
+            .flat_map(|(_, ids)| ids.iter().cloned())
+            .collect()
+    }
+
     pub fn numeric_field_count(&self) -> usize {
         self.numeric_index.len()
     }

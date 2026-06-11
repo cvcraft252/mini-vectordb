@@ -57,7 +57,7 @@ pub fn query_keywords(db: &VectorDB, question: &str, top_k: usize) -> Vec<String
             &[0.0; 4],
             top_k,
             DistanceMetric::Euclidean,
-            &format!("text LIKE \"{pattern}%\""),
+            &format!("text LIKE \"%{pattern}%\""),
         ) {
             for r in rs {
                 if let Ok(Some(rec)) = db.get(&r.id)

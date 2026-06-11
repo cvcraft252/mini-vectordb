@@ -106,7 +106,31 @@ fn eval(filter: &Filter, index: &MetadataIndex) -> HashSet<String> {
             acc.extend(leaf_ids(index, field, v));
             acc
         }),
-        Filter::Like(field, prefix) => index.get_string_prefix(field, prefix).into_iter().collect(),
+        Filter::Like(field, label) => {
+            if label.starts_with('%') && label.ends_with('%') {
+                let pattern = label
+                    .strip_prefix('%')
+                    .unwrap()
+                    .strip_suffix('%')
+                    .unwrap();
+                index
+                    .get_string_contains(field, pattern)
+                    .into_iter()
+                    .collect()
+            } else if let Some(suffix) = label.strip_prefix('%') {
+                index
+                    .get_string_suffix(field, suffix)
+                    .into_iter()
+                    .collect()
+            } else if let Some(prefix) = label.strip_suffix('%') {
+                index
+                    .get_string_prefix(field, prefix)
+                    .into_iter()
+                    .collect()
+            } else {
+                index.get_string(field, label).into_iter().collect()
+            }
+        }
     }
 }
 
@@ -389,13 +413,27 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
             Ok(Filter::In(field, values))
         }
         "LIKE" => {
-            let pattern = match &tokens[*pos] {
+            let raw = match &tokens[*pos] {
                 Token::StringLiteral(s) => s.clone(),
                 _ => return Err("LIKE requires a string pattern".into()),
             };
             *pos += 1;
-            let prefix = pattern.strip_suffix('%').unwrap_or(&pattern);
-            Ok(Filter::Like(field, prefix.to_string()))
+            let has_prefix = raw.starts_with('%');
+            let has_suffix = raw.ends_with('%');
+            let pattern = raw
+                .strip_prefix('%')
+                .unwrap_or(&raw)
+                .strip_suffix('%')
+                .unwrap_or(&raw)
+                .to_string();
+            // encode match type in the stored string: "pattern" "pattern%" "%pattern" "%pattern%"
+            let label = match (has_prefix, has_suffix) {
+                (true, true) => format!("%{pattern}%"),
+                (true, false) => format!("%{pattern}"),
+                (false, true) => format!("{pattern}%"),
+                (false, false) => pattern,
+            };
+            Ok(Filter::Like(field, label))
         }
         _ => Err(format!("unknown operator: {op}")),
     }
