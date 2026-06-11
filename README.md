@@ -2,6 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.95%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Star History Chart](https://api.star-history.com/svg?repos=cvcraft252/mini-vectordb&type=Date)](https://star-history.com/#cvcraft252/mini-vectordb&Date)
 
 A minimal progressive vector database in Rust — from brute-force exact search to HNSW,
 with metadata filtering, persistence, and a REST API. Each milestone is standalone.
@@ -43,8 +44,8 @@ with metadata filtering, persistence, and a REST API. Each milestone is standalo
 - [x] Query planner with cost-based optimization (filter-first vs search-first)
 
 ### REST API
-- [ ] Axum-based HTTP server
-- [ ] CRUD endpoints (POST /insert, GET /get/:id, POST /search, DELETE /delete)
+- [x] Axum-based HTTP server
+- [x] CRUD endpoints (POST /insert, GET /get/:id, POST /search, DELETE /delete)
 - [ ] Batch endpoints (POST /insert_batch, POST /search_batch)
 - [ ] Health check and database statistics endpoints
 
