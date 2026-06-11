@@ -1,3 +1,5 @@
+/// REST API server.
+pub mod api;
 /// Core types: Record, DistanceMetric, errors.
 pub mod core;
 /// Index trait and implementations.
