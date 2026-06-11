@@ -71,7 +71,7 @@ fn parse_greater_equal() {
 #[test]
 fn parse_like_prefix() {
     let f = parse_filter("name LIKE \"prefix%\"").unwrap();
-    assert_eq!(f, Filter::Like("name".into(), "prefix".into()));
+    assert_eq!(f, Filter::Like("name".into(), "prefix%".into()));
 }
 
 #[test]

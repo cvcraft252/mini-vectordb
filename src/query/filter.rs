@@ -108,25 +108,15 @@ fn eval(filter: &Filter, index: &MetadataIndex) -> HashSet<String> {
         }),
         Filter::Like(field, label) => {
             if label.starts_with('%') && label.ends_with('%') {
-                let pattern = label
-                    .strip_prefix('%')
-                    .unwrap()
-                    .strip_suffix('%')
-                    .unwrap();
+                let pattern = label.strip_prefix('%').unwrap().strip_suffix('%').unwrap();
                 index
                     .get_string_contains(field, pattern)
                     .into_iter()
                     .collect()
             } else if let Some(suffix) = label.strip_prefix('%') {
-                index
-                    .get_string_suffix(field, suffix)
-                    .into_iter()
-                    .collect()
+                index.get_string_suffix(field, suffix).into_iter().collect()
             } else if let Some(prefix) = label.strip_suffix('%') {
-                index
-                    .get_string_prefix(field, prefix)
-                    .into_iter()
-                    .collect()
+                index.get_string_prefix(field, prefix).into_iter().collect()
             } else {
                 index.get_string(field, label).into_iter().collect()
             }
