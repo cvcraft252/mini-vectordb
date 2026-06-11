@@ -37,6 +37,16 @@ struct UpdateRequest {
     vector: Vec<f32>,
 }
 
+#[derive(Deserialize)]
+struct InsertBatchRequest {
+    records: Vec<InsertRequest>,
+}
+
+#[derive(Deserialize)]
+struct SearchBatchRequest {
+    queries: Vec<SearchRequest>,
+}
+
 fn default_metric() -> String {
     "euclidean".into()
 }
@@ -126,6 +136,46 @@ async fn update(
     }
 }
 
+async fn insert_batch(
+    State(state): State<AppState>,
+    Json(req): Json<InsertBatchRequest>,
+) -> impl IntoResponse {
+    let count = req.records.len();
+    for r in req.records {
+        if let Err(e) = state.db.insert(Record::new(&r.id, r.vector)) {
+            return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
+        }
+    }
+    (StatusCode::OK, format!("inserted {count}")).into_response()
+}
+
+async fn search_batch(
+    State(state): State<AppState>,
+    Json(req): Json<SearchBatchRequest>,
+) -> impl IntoResponse {
+    let mut results = Vec::with_capacity(req.queries.len());
+    for q in &req.queries {
+        let metric = match parse_metric(&q.metric) {
+            Ok(m) => m,
+            Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+        };
+        match state.db.search(&q.vector, q.top_k, metric) {
+            Ok(r) => {
+                let out: Vec<SearchResultResponse> = r
+                    .iter()
+                    .map(|s| SearchResultResponse {
+                        id: s.id.clone(),
+                        distance: s.distance,
+                    })
+                    .collect();
+                results.push(out);
+            }
+            Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+        }
+    }
+    Json(results).into_response()
+}
+
 /// Starts the HTTP server on the given port.
 pub async fn serve(db: VectorDB, port: u16) {
     let state = AppState { db: Arc::new(db) };
@@ -135,6 +185,8 @@ pub async fn serve(db: VectorDB, port: u16) {
         .route("/search", routing::post(search))
         .route("/delete/:id", routing::delete(delete))
         .route("/update", routing::post(update))
+        .route("/insert_batch", routing::post(insert_batch))
+        .route("/search_batch", routing::post(search_batch))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
