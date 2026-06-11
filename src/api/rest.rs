@@ -5,8 +5,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing;
-use axum::{Json, Router};
+use axum::{routing, Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::VectorDB;
@@ -140,9 +139,9 @@ pub async fn serve(db: VectorDB, port: u16) {
     let state = AppState { db: Arc::new(db) };
     let app = Router::new()
         .route("/insert", routing::post(insert))
-        .route("/get/{id}", routing::get(get))
+        .route("/get/:id", routing::get(get))
         .route("/search", routing::post(search))
-        .route("/delete/{id}", routing::delete(delete))
+        .route("/delete/:id", routing::delete(delete))
         .route("/update", routing::post(update))
         .with_state(state);
 
