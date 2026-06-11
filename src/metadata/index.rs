@@ -3,10 +3,6 @@ use std::ops::Bound;
 
 use crate::metadata::MetadataValue;
 
-/// Strongly-ordered f64 wrapper. Uses `total_cmp` so every bit pattern
-/// (including NaN, subnormals) has a defined position. The ordering is
-/// deterministic but not numerically meaningful for NaN — callers should
-/// avoid storing NaN in numeric metadata fields.
 #[derive(Debug, Clone, Copy)]
 struct OrderedF64(f64);
 
@@ -30,23 +26,14 @@ impl Ord for OrderedF64 {
     }
 }
 
-// String and numeric indexes are independent — a single record's
-// metadata fields appear in both if they contain both types.
-// Insert is O(log N) for numeric fields, O(1) amortized for strings.
-// The index stores only record IDs, not the records themselves.
 /// In-memory index for metadata-driven record filtering.
 pub struct MetadataIndex {
-    /// String equality index: field_name -> (value -> [ids]).
     string_index: HashMap<String, HashMap<String, Vec<String>>>,
-    /// Numeric range index: field_name -> BTreeMap<value -> [ids]>.
-    /// Multiple records can share the same numeric value.
     numeric_index: HashMap<String, BTreeMap<OrderedF64, Vec<String>>>,
-    /// Bool index: field_name -> (true_ids, false_ids).
     bool_index: HashMap<String, (Vec<String>, Vec<String>)>,
 }
 
 impl MetadataIndex {
-    /// Create an empty index.
     pub fn new() -> Self {
         Self {
             string_index: HashMap::new(),
@@ -55,11 +42,6 @@ impl MetadataIndex {
         }
     }
 
-    /// Index all indexable metadata fields from a record.
-    ///
-    /// Called after insert. Skips Null and List values (lists are not
-    /// indexable at the top level; nested indexable values could be
-    /// an optimization later).
     pub fn index_record(&mut self, id: &str, metadata: &HashMap<String, MetadataValue>) {
         for (field, value) in metadata {
             match value {
@@ -100,11 +82,6 @@ impl MetadataIndex {
         }
     }
 
-    /// Remove a record's metadata entries from all indexes.
-    ///
-    /// Called before delete or during update. Linear scan through
-    /// indexed values to find and remove the ID — acceptable while
-    /// per-field value cardinality is moderate.
     pub fn deindex_record(&mut self, id: &str, metadata: &HashMap<String, MetadataValue>) {
         for (field, value) in metadata {
             match value {
@@ -151,7 +128,6 @@ impl MetadataIndex {
         }
     }
 
-    /// Exact-match lookup for a string field. O(1).
     pub fn get_string(&self, field: &str, value: &str) -> Vec<String> {
         self.string_index
             .get(field)
@@ -160,7 +136,6 @@ impl MetadataIndex {
             .unwrap_or_default()
     }
 
-    /// Get all IDs where numeric field == value. O(log N).
     pub fn get_numeric_eq(&self, field: &str, value: f64) -> Vec<String> {
         self.numeric_index
             .get(field)
@@ -169,10 +144,6 @@ impl MetadataIndex {
             .unwrap_or_default()
     }
 
-    /// Get all IDs where numeric field > value. O(log N + K).
-    ///
-    /// Uses `Bound::Excluded` on the lower bound for strict greater-than.
-    /// The upper bound is unbounded.
     pub fn get_numeric_gt(&self, field: &str, value: f64) -> Vec<String> {
         let Some(tree) = self.numeric_index.get(field) else {
             return Vec::new();
@@ -182,10 +153,6 @@ impl MetadataIndex {
             .collect()
     }
 
-    /// Get all IDs where numeric field < value. O(log N + K).
-    ///
-    /// Uses `Bound::Excluded` on the upper bound for strict less-than.
-    /// The lower bound is unbounded.
     pub fn get_numeric_lt(&self, field: &str, value: f64) -> Vec<String> {
         let Some(tree) = self.numeric_index.get(field) else {
             return Vec::new();
@@ -195,7 +162,6 @@ impl MetadataIndex {
             .collect()
     }
 
-    /// Get all IDs where bool field matches the given value. O(1).
     pub fn get_bool(&self, field: &str, value: bool) -> Vec<String> {
         self.bool_index
             .get(field)
@@ -203,7 +169,6 @@ impl MetadataIndex {
             .unwrap_or_default()
     }
 
-    /// Get all IDs where string field value starts with prefix. O(N_field).
     pub fn get_string_prefix(&self, field: &str, prefix: &str) -> Vec<String> {
         let Some(map) = self.string_index.get(field) else {
             return Vec::new();
@@ -214,7 +179,6 @@ impl MetadataIndex {
             .collect()
     }
 
-    /// Get all IDs indexed under any value of a given field.
     pub(crate) fn get_field_ids(&self, field: &str) -> Vec<String> {
         let mut ids: Vec<String> = Vec::new();
         if let Some(map) = self.string_index.get(field) {
@@ -229,18 +193,17 @@ impl MetadataIndex {
         }
         ids
     }
+
     pub fn clear_field(&mut self, field: &str) {
         self.string_index.remove(field);
         self.numeric_index.remove(field);
         self.bool_index.remove(field);
     }
 
-    /// Number of indexed string fields.
     pub fn string_field_count(&self) -> usize {
         self.string_index.len()
     }
 
-    /// Number of indexed numeric fields.
     pub fn numeric_field_count(&self) -> usize {
         self.numeric_index.len()
     }

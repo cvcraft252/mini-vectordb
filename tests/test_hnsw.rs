@@ -116,7 +116,12 @@ fn search_limits_to_top_k() {
         .unwrap();
     assert!(results.len() >= 1, "should return at least one result");
     assert!(results.len() <= 3);
-    assert!(results.iter().zip(results.iter().skip(1)).all(|(a, b)| a.distance <= b.distance));
+    assert!(
+        results
+            .iter()
+            .zip(results.iter().skip(1))
+            .all(|(a, b)| a.distance <= b.distance)
+    );
 }
 
 #[test]

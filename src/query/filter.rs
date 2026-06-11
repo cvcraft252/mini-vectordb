@@ -4,59 +4,25 @@ use crate::metadata::MetadataValue;
 use crate::metadata::index::MetadataIndex;
 
 /// A filter expression tree.
-///
-/// Operators bind with precedence: NOT > AND > OR.
-/// Parentheses override precedence.
-///
-/// # Syntax (EBNF-like)
-/// ```text
-/// expr     = or_expr
-/// or_expr  = and_expr ("OR" and_expr)*
-/// and_expr = not_expr ("AND" not_expr)*
-/// not_expr = "NOT" not_expr | atom
-/// atom     = field op literal
-///          | field "IN" "(" literal ("," literal)* ")"
-///          | "(" expr ")"
-/// field    = identifier
-/// literal  = string | number | "true" | "false"
-/// op       = "=" | "!=" | "<" | ">" | "<=" | ">=" | "LIKE"
-/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum Filter {
-    /// Both sub-filters must match.
     And(Box<Filter>, Box<Filter>),
-    /// At least one sub-filter matches.
     Or(Box<Filter>, Box<Filter>),
-    /// The sub-filter must NOT match.
     Not(Box<Filter>),
-    /// Field equals value.
     Eq(String, MetadataValue),
-    /// Field does not equal value.
     Ne(String, MetadataValue),
-    /// Field less than value.
     Lt(String, MetadataValue),
-    /// Field greater than value.
     Gt(String, MetadataValue),
-    /// Field less than or equal to value.
     Lte(String, MetadataValue),
-    /// Field greater than or equal to value.
     Gte(String, MetadataValue),
-    /// Field in set of values.
     In(String, Vec<MetadataValue>),
-    /// Field LIKE pattern. The stored value is the prefix with '%' stripped.
     Like(String, String),
 }
 
-/// Parse a filter expression string into an AST.
-///
-/// ```
-/// # use mini_vectordb::query::filter::parse_filter;
-/// let filter = parse_filter("category = \"book\" AND price < 50").unwrap();
-/// ```
+/// Parses a filter expression string into an AST.
 ///
 /// # Errors
-/// Returns a String describing the parse error (unexpected token,
-/// mismatched parentheses, invalid operator, etc.).
+/// Returns a String describing any parse error.
 pub fn parse_filter(input: &str) -> Result<Filter, String> {
     let tokens = tokenize(input)?;
     if tokens.is_empty() {
@@ -94,13 +60,10 @@ pub fn evaluate_filter(filter: &Filter, index: &MetadataIndex) -> Vec<String> {
     ids
 }
 
-// ── Filter evaluator ──
-
 fn eval(filter: &Filter, index: &MetadataIndex) -> HashSet<String> {
     match filter {
         Filter::And(l, r) => {
             let left = eval(l, index);
-            // short-circuit: AND with empty is always empty
             if left.is_empty() {
                 return HashSet::new();
             }
@@ -112,15 +75,9 @@ fn eval(filter: &Filter, index: &MetadataIndex) -> HashSet<String> {
             let right = eval(r, index);
             left.union(&right).cloned().collect()
         }
-        Filter::Not(inner) => {
-            // NOT requires a universe set, which the caller must provide
-            // by AND-ing with a non-negated condition. This should not be
-            // used standalone — document this in the public API.
-            eval(inner, index)
-        }
+        Filter::Not(inner) => eval(inner, index),
         Filter::Eq(field, val) => leaf_ids(index, field, val),
         Filter::Ne(field, val) => {
-            // compute all IDs for this field, then remove the matching ones
             let matching = leaf_ids(index, field, val);
             let all: HashSet<String> = index.get_field_ids(field).into_iter().collect();
             all.difference(&matching).cloned().collect()
@@ -153,7 +110,6 @@ fn eval(filter: &Filter, index: &MetadataIndex) -> HashSet<String> {
     }
 }
 
-/// Convert a MetadataValue to f64 for numeric comparison.
 fn to_f64(val: &MetadataValue) -> f64 {
     match val {
         MetadataValue::Integer(i) => *i as f64,
@@ -162,7 +118,6 @@ fn to_f64(val: &MetadataValue) -> f64 {
     }
 }
 
-/// Look up IDs matching an equality condition against any value type.
 fn leaf_ids(index: &MetadataIndex, field: &str, val: &MetadataValue) -> HashSet<String> {
     match val {
         MetadataValue::String(s) => index.get_string(field, s).into_iter().collect(),
@@ -195,13 +150,11 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     while i < len {
         let c = chars[i];
 
-        // whitespace
         if c.is_whitespace() {
             i += 1;
             continue;
         }
 
-        // parentheses and comma
         if c == '(' {
             tokens.push(Token::OpenParen);
             i += 1;
@@ -218,14 +171,13 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             continue;
         }
 
-        // string literals: "..." or '...'
         if c == '"' || c == '\'' {
             let quote = c;
-            i += 1; // skip opening quote
+            i += 1;
             let start = i;
             while i < len && chars[i] != quote {
                 if chars[i] == '\\' && i + 1 < len {
-                    i += 2; // skip escaped char including the backslash
+                    i += 2;
                 } else {
                     i += 1;
                 }
@@ -234,12 +186,11 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 return Err("unterminated string literal".into());
             }
             let val: String = chars[start..i].iter().collect();
-            i += 1; // skip closing quote
+            i += 1;
             tokens.push(Token::StringLiteral(val));
             continue;
         }
 
-        // numbers: integer or float
         if c.is_ascii_digit() || (c == '-' && i + 1 < len && chars[i + 1].is_ascii_digit()) {
             let start = i;
             if c == '-' {
@@ -271,7 +222,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             continue;
         }
 
-        // identifiers and keywords
         if c.is_alphabetic() || c == '_' {
             let start = i;
             while i < len && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '%') {
@@ -296,7 +246,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             continue;
         }
 
-        // operators: =, !=, <, >, <=, >=
         if c == '=' {
             tokens.push(Token::Keyword("=".into()));
             i += 1;
@@ -334,12 +283,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
-// ── Recursive descent parser ──
-
 fn parse_or_expr(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
     let mut left = parse_and_expr(tokens, pos)?;
     while *pos < tokens.len() && matches!(&tokens[*pos], Token::Keyword(k) if k == "OR") {
-        *pos += 1; // skip OR
+        *pos += 1;
         let right = parse_and_expr(tokens, pos)?;
         left = Filter::Or(Box::new(left), Box::new(right));
     }
@@ -349,7 +296,7 @@ fn parse_or_expr(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
 fn parse_and_expr(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
     let mut left = parse_not_expr(tokens, pos)?;
     while *pos < tokens.len() && matches!(&tokens[*pos], Token::Keyword(k) if k == "AND") {
-        *pos += 1; // skip AND
+        *pos += 1;
         let right = parse_not_expr(tokens, pos)?;
         left = Filter::And(Box::new(left), Box::new(right));
     }
@@ -358,7 +305,7 @@ fn parse_and_expr(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
 
 fn parse_not_expr(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
     if *pos < tokens.len() && matches!(&tokens[*pos], Token::Keyword(k) if k == "NOT") {
-        *pos += 1; // skip NOT
+        *pos += 1;
         let inner = parse_not_expr(tokens, pos)?;
         return Ok(Filter::Not(Box::new(inner)));
     }
@@ -370,7 +317,6 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
         return Err("unexpected end of expression".into());
     }
 
-    // parenthesized expression
     if tokens[*pos] == Token::OpenParen {
         *pos += 1;
         let expr = parse_or_expr(tokens, pos)?;
@@ -381,7 +327,6 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
         return Ok(expr);
     }
 
-    // field name
     let field = match &tokens[*pos] {
         Token::Identifier(name) => name.clone(),
         _ => return Err(format!("expected field name, got {:?}", tokens[*pos])),
@@ -392,7 +337,6 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
         return Err(format!("expected operator after field '{field}'"));
     }
 
-    // operator
     let op = match &tokens[*pos] {
         Token::Keyword(op) => op.clone(),
         _ => return Err(format!("expected operator, got {:?}", tokens[*pos])),
@@ -428,12 +372,12 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
             if *pos >= tokens.len() || tokens[*pos] != Token::OpenParen {
                 return Err("expected '(' after IN".into());
             }
-            *pos += 1; // skip '('
+            *pos += 1;
             let mut values = Vec::new();
             loop {
                 values.push(parse_literal(tokens, pos)?);
                 if *pos < tokens.len() && tokens[*pos] == Token::Comma {
-                    *pos += 1; // skip ','
+                    *pos += 1;
                     continue;
                 }
                 break;
@@ -441,7 +385,7 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
             if *pos >= tokens.len() || tokens[*pos] != Token::CloseParen {
                 return Err("expected ')' after IN values".into());
             }
-            *pos += 1; // skip ')'
+            *pos += 1;
             Ok(Filter::In(field, values))
         }
         "LIKE" => {
@@ -450,7 +394,6 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Result<Filter, String> {
                 _ => return Err("LIKE requires a string pattern".into()),
             };
             *pos += 1;
-            // strip trailing '%' — we only support prefix matching
             let prefix = pattern.strip_suffix('%').unwrap_or(&pattern);
             Ok(Filter::Like(field, prefix.to_string()))
         }

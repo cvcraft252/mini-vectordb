@@ -1,7 +1,5 @@
 //! HNSW graph-based index for approximate nearest neighbor search.
-//! Implemented from Malkov & Yashunin (2016): "Efficient and robust
-//! approximate nearest neighbor search using Hierarchical Navigable
-//! Small World graphs" (arXiv:1603.09320).
+//! Reference: Malkov & Yashunin (2016), arXiv:1603.09320.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
@@ -14,12 +12,9 @@ use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
 use crate::index::{Index, SearchResult};
 
-/// HNSW binary format magic number: "HNSW" in ASCII.
 const HNSW_MAGIC: u32 = 0x484E5357;
-/// Current binary format version.
 const HNSW_VERSION: u32 = 1;
 
-// Candidate wrapper that orders by distance (smallest first) for BinaryHeap (max-heap).
 #[derive(PartialEq)]
 struct Candidate {
     distance: f32,
@@ -42,19 +37,15 @@ impl Ord for Candidate {
     }
 }
 
-/// Returns a random level via exponential decay.
-/// `ml = 1/ln(M)` gives roughly `1/M` of nodes reaching level ≥ 1.
 fn get_random_level(m: usize) -> usize {
     let ml = 1.0 / (m as f64).ln();
     let r: f64 = rand::random();
     (-r.ln() * ml).floor() as usize
 }
 
-/// One node in the HNSW graph.
 struct Node {
     id: String,
     vector: Vec<f32>,
-    /// Adjacency lists indexed by layer: layers[0] is the base layer.
     layers: Vec<Vec<usize>>,
 }
 
@@ -62,50 +53,27 @@ struct Node {
 ///
 /// Multi-layer structure: higher layers are sparser highways enabling
 /// logarithmic search time. All nodes exist in layer 0.
-///
-/// # Parameters
-/// - `m` — max connections per node per layer (default 16). Layer 0 uses 2*m.
-/// - `ef` — candidate list size during construction and search (default 200).
-///
-/// Higher `ef` values improve recall at the cost of speed.
 pub struct HnswIndex {
-    /// All nodes indexed by internal usize ID.
     nodes: Vec<Option<Node>>,
-    /// Node index of the top-layer entry point.
     entry_point: Option<usize>,
-    /// Max connections per node for layers > 0.
     m: usize,
-    /// Max connections per node for layer 0 (2*m).
     m0: usize,
-    /// Candidate list size during both construction and search.
     ef: usize,
-    /// Current maximum level in the graph.
     max_level: usize,
-    /// Vector dimension, locked on first insert.
     dimension: usize,
-    /// Number of live (non-deleted) nodes.
     count: usize,
-    /// Maps record ID to node index for O(1) get/delete.
     id_to_idx: HashMap<String, usize>,
 }
 
 impl HnswIndex {
-    /// Create an empty HNSW index with default parameters.
-    ///
-    /// ```
-    /// # use mini_vectordb::index::hnsw::HnswIndex;
-    /// # use mini_vectordb::index::Index;
-    /// let idx = HnswIndex::new();
-    /// assert!(idx.is_empty());
-    /// ```
+    /// Creates an empty HNSW index with default parameters.
     pub fn new() -> Self {
         Self::with_params(DEFAULT_M, DEFAULT_EF)
     }
 
-    /// Create an HNSW index with custom M and ef parameters.
+    /// Creates an HNSW index with custom M and ef parameters.
     pub fn with_params(m: usize, ef: usize) -> Self {
         Self {
-            // reserve index 0 as sentinel
             nodes: vec![None],
             entry_point: None,
             m,
@@ -130,11 +98,6 @@ impl Default for HnswIndex {
 }
 
 impl HnswIndex {
-    /// Greedy search at a single layer, returning up to `ef` nearest neighbors.
-    ///
-    /// Maintains a candidate set (closest unevaluated) and a result set
-    /// (best so far). Stops when the closest unevaluated candidate is
-    /// farther than the farthest result.
     fn search_layer(
         &self,
         query: &[f32],
@@ -150,12 +113,10 @@ impl HnswIndex {
         let node = self.nodes[entry].as_ref().expect("entry node exists");
         let dist = metric.compute(query, &node.vector);
 
-        // Candidates is a min-heap via Reverse: smallest distance first.
         candidates.push(Reverse(Candidate {
             distance: dist,
             index: entry,
         }));
-        // Results is a max-heap: largest distance first (for easy pruning).
         results.push(Candidate {
             distance: dist,
             index: entry,
@@ -163,7 +124,6 @@ impl HnswIndex {
         visited[entry] = true;
 
         while let Some(Reverse(current)) = candidates.pop() {
-            // stop: current candidate is farther than the worst result
             if let Some(worst) = results.peek()
                 && current.distance > worst.distance
                 && results.len() >= ef
@@ -186,22 +146,18 @@ impl HnswIndex {
                 let neighbor_node = self.nodes[neighbor].as_ref().expect("neighbor exists");
                 let d = metric.compute(query, &neighbor_node.vector);
 
-                let add = match results.peek() {
+                if match results.peek() {
                     Some(w) if results.len() >= ef => d < w.distance,
                     _ => true,
-                };
-
-                if add {
-                    let cand = Candidate {
+                } {
+                    candidates.push(Reverse(Candidate {
                         distance: d,
                         index: neighbor,
-                    };
-                    candidates.push(Reverse(cand));
+                    }));
                     results.push(Candidate {
                         distance: d,
                         index: neighbor,
                     });
-                    // keep results size bounded to ef
                     while results.len() > ef {
                         results.pop();
                     }
@@ -216,16 +172,11 @@ impl HnswIndex {
             .collect()
     }
 
-    /// Select up to `m` nearest indices from a distance-sorted candidate list.
     fn select_neighbors(&self, candidates: &[(usize, f32)], m: usize) -> Vec<usize> {
         candidates.iter().take(m).map(|(idx, _)| *idx).collect()
     }
 
-    /// Save the graph structure to a binary file for fast restart.
-    ///
-    /// Writes the header (magic, version, parameters), then each node's
-    /// id, vector, and adjacency lists. Tombstones (deleted nodes) are
-    /// skipped.
+    /// Saves the graph to a binary file.
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
         let tmp = path.with_extension("tmp");
@@ -284,10 +235,7 @@ impl HnswIndex {
         Ok(())
     }
 
-    /// Load a previously saved HNSW graph from a binary file.
-    ///
-    /// Restores the exact same graph structure — search results
-    /// are identical before and after save/load.
+    /// Loads a previously saved HNSW graph.
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let file = fs::File::open(path.as_ref())
             .map_err(|e| VectorDBError::Other(format!("open: {e}")))?;
@@ -378,11 +326,7 @@ impl HnswIndex {
         })
     }
 
-    /// Build an HNSW index from vectors stored in a memory-mapped file.
-    ///
-    /// Reads all vectors from the mmap store, inserts them into the index
-    /// with sequential numeric IDs. The resulting index can search over
-    /// large datasets loaded from disk.
+    /// Builds an HNSW index from a memory-mapped store.
     pub fn from_mmap_store(mmap: &crate::storage::mmap_store::MmapStore) -> Result<Self> {
         let mut idx = Self::new();
         for id in mmap.ids() {
@@ -402,7 +346,6 @@ impl Index for HnswIndex {
         top_k: usize,
         metric: DistanceMetric,
     ) -> Result<Vec<SearchResult>> {
-        // handle empty index or zero top_k
         let Some(entry) = self.entry_point else {
             return Ok(Vec::new());
         };
@@ -410,7 +353,6 @@ impl Index for HnswIndex {
             return Ok(Vec::new());
         }
 
-        // validate dimension
         if query.len() != self.dimension {
             return Err(VectorDBError::DimensionMismatch {
                 expected: self.dimension,
@@ -418,14 +360,12 @@ impl Index for HnswIndex {
             });
         }
 
-        // descend from top layer to layer 1, greedy single-path
         let mut current = entry;
         for layer in (1..=self.max_level).rev() {
             let layer_results = self.search_layer(query, current, 1, layer, metric);
             current = layer_results[0].0;
         }
 
-        // exhaustive search at layer 0
         let ef = self.ef.max(top_k);
         let candidates = self.search_layer(query, current, ef, 0, metric);
         let k = top_k.min(candidates.len());
@@ -483,7 +423,6 @@ impl Index for HnswIndex {
         let node_idx = self.nodes.len();
         let level = get_random_level(self.m);
 
-        // update max_level and entry_point if this node goes higher
         if self.entry_point.is_none() {
             self.entry_point = Some(node_idx);
             self.max_level = level;
@@ -492,7 +431,6 @@ impl Index for HnswIndex {
             self.entry_point = Some(node_idx);
         }
 
-        // build node layers
         let mut layers = Vec::with_capacity(level + 1);
         for _ in 0..=level {
             layers.push(Vec::new());
@@ -507,31 +445,26 @@ impl Index for HnswIndex {
         self.id_to_idx.insert(record.id.clone(), node_idx);
         self.count += 1;
 
-        // connect the new node into the graph
         let Some(entry) = self.entry_point else {
             return Ok(());
         };
 
         let mut current = entry;
-        // descend from top layer down to level+1
         for l in ((level + 1)..=self.max_level).rev() {
             let layer_results =
                 self.search_layer(&record.vector, current, 1, l, metric_for_insert());
             current = layer_results[0].0;
         }
 
-        // connect at each layer from level down to 0
         for l in (0..=level.min(self.max_level)).rev() {
             let candidates =
                 self.search_layer(&record.vector, current, self.ef, l, metric_for_insert());
             let m_max = if l == 0 { self.m0 } else { self.m };
             let neighbors = self.select_neighbors(&candidates, m_max);
 
-            // add bidirectional connections
             let node_ref = self.nodes[node_idx].as_mut().expect("new node exists");
             node_ref.layers[l] = neighbors.clone();
 
-            // collect neighbors that need pruning before mutating them
             let mut prunes: Vec<(usize, Vec<usize>)> = Vec::new();
             for &n_idx in &neighbors {
                 let neighbor = self.nodes[n_idx].as_mut().expect("neighbor exists");
@@ -543,10 +476,7 @@ impl Index for HnswIndex {
                 }
             }
 
-            // score and prune outside the mutable borrow
             for (n_idx, conns) in prunes {
-                // score neighbor's connections by distance from the neighbor's
-                // own vector (not the new node's vector)
                 let n_vec = self.nodes[n_idx]
                     .as_ref()
                     .expect("neighbor exists")
@@ -565,7 +495,6 @@ impl Index for HnswIndex {
                     scored.iter().take(m_max).map(|(i, _)| *i).collect();
             }
 
-            // update entry for next layer down
             if !candidates.is_empty() {
                 current = candidates[0].0;
             }
@@ -577,8 +506,7 @@ impl Index for HnswIndex {
     fn delete(&mut self, id: &str) -> Result<()> {
         if let Some(&idx) = self.id_to_idx.get(id) {
             if idx == self.entry_point.unwrap_or(0) {
-                // to simplify, mark the node as deleted in-place
-                // and keep it in the graph as a tombstone
+                // keep entry point as tombstone to avoid re-wiring the graph
                 self.nodes[idx] = None;
                 self.count = self.count.saturating_sub(1);
                 self.id_to_idx.remove(id);
@@ -616,8 +544,6 @@ impl Index for HnswIndex {
     }
 }
 
-/// Default metric used during construction: Euclidean provides stable
-/// spacial layout. Query-time metric is caller-specified.
 fn metric_for_insert() -> DistanceMetric {
     DistanceMetric::Euclidean
 }

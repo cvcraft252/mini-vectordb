@@ -1,4 +1,4 @@
-//! Combines metadata filtering with vector search for end-to-end queries.
+//! Combines metadata filtering with vector search.
 
 use std::collections::HashSet;
 
@@ -8,13 +8,8 @@ use crate::index::{Index, SearchResult};
 use crate::metadata::index::MetadataIndex;
 use crate::query::filter::{Filter, evaluate_filter};
 
-/// Search with pre-filtering: evaluate the filter, then compute distances
+/// Searches with pre-filtering: evaluate the filter, then compute distances
 /// only for matching records.
-///
-/// When the filter eliminates most records, this is faster than a full
-/// scan. When the filter matches nearly everything, the overhead of
-/// building a temporary MetadataIndex makes it slightly slower than
-/// calling [`Index::search`] directly.
 pub fn execute_filtered_search(
     query: &[f32],
     top_k: usize,

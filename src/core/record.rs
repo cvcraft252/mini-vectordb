@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::metadata::Metadata;
 
-/// One vector + its identity + optional key-value tags.
-/// Callers own ID generation — we never auto-assign.
+/// One vector with an ID and optional metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
     pub id: String,
@@ -13,7 +12,7 @@ pub struct Record {
 }
 
 impl Record {
-    /// Create a record with no metadata.
+    /// Creates a record with no metadata.
     ///
     /// # Examples
     /// ```rust
@@ -30,18 +29,7 @@ impl Record {
         }
     }
 
-    /// Create a record with typed metadata attached.
-    ///
-    /// # Examples
-    /// ```rust
-    /// # use mini_vectordb::core::record::Record;
-    /// # use mini_vectordb::metadata::{Metadata, MetadataValue};
-    ///
-    /// let mut meta = Metadata::new();
-    /// meta.insert("price".into(), MetadataValue::Integer(42));
-    /// meta.insert("label".into(), MetadataValue::String("book".into()));
-    /// let r = Record::with_metadata("doc-2", vec![1.0], meta);
-    /// ```
+    /// Creates a record with typed metadata.
     pub fn with_metadata(id: impl Into<String>, vector: Vec<f32>, metadata: Metadata) -> Self {
         Self {
             id: id.into(),

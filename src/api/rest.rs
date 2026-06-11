@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::{routing, Json, Router};
+use axum::{Json, Router, routing};
 use serde::{Deserialize, Serialize};
 
 use crate::VectorDB;
@@ -16,8 +16,6 @@ use crate::core::record::Record;
 struct AppState {
     db: Arc<VectorDB>,
 }
-
-// ── Request types ──
 
 #[derive(Deserialize)]
 struct InsertRequest {
@@ -43,8 +41,6 @@ fn default_metric() -> String {
     "euclidean".into()
 }
 
-// ── Response types ──
-
 #[derive(Serialize)]
 struct SearchResultResponse {
     id: String,
@@ -67,8 +63,6 @@ fn parse_metric(s: &str) -> Result<DistanceMetric, String> {
         _ => Err(format!("unknown metric: {s}")),
     }
 }
-
-// ── Handlers ──
 
 async fn insert(
     State(state): State<AppState>,
@@ -132,9 +126,7 @@ async fn update(
     }
 }
 
-/// Start the HTTP server on the given port.
-///
-/// Blocks the current thread until the server is shut down.
+/// Starts the HTTP server on the given port.
 pub async fn serve(db: VectorDB, port: u16) {
     let state = AppState { db: Arc::new(db) };
     let app = Router::new()

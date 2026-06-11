@@ -448,7 +448,12 @@ fn upgrades_to_hnsw_at_threshold() {
     assert_eq!(db.len(), 1000);
     let results = db.search(&[0.0], 3, DistanceMetric::Euclidean).unwrap();
     assert!(results.len() >= 1);
-    assert!(results.iter().zip(results.iter().skip(1)).all(|(a, b)| a.distance <= b.distance));
+    assert!(
+        results
+            .iter()
+            .zip(results.iter().skip(1))
+            .all(|(a, b)| a.distance <= b.distance)
+    );
 }
 
 #[test]
