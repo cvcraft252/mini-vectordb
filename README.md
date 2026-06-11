@@ -14,9 +14,9 @@ with metadata filtering, persistence, and a REST API. Each milestone is standalo
 - [x] Brute-force flat index with exact nearest neighbor search
 - [x] Precomputed L2 norms for fast cosine distance
 - [x] Rayon-parallel batch search across multiple queries
-- [ ] HNSW approximate nearest neighbor index
-- [ ] HNSW graph serialization for fast restart
-- [ ] Adaptive index selection (flat vs HNSW based on dataset size)
+- [x] HNSW approximate nearest neighbor index
+- [x] HNSW graph serialization for fast restart
+- [x] Adaptive index selection (flat → HNSW at 1000 records)
 
 ### CRUD Operations
 - [x] Insert, get, delete, update, clear, len, is_empty
@@ -29,18 +29,18 @@ with metadata filtering, persistence, and a REST API. Each milestone is standalo
 - [x] JSON persistence with pretty-printing and atomic write-then-rename
 - [x] Binary persistence (MVDB magic header, raw f32 encoding)
 - [x] Auto-persistence — configurable auto-save on every mutation
-- [ ] Memory-mapped vector storage for GB-scale datasets
+- [x] Memory-mapped vector storage for GB-scale datasets
 - [ ] Mmap + HNSW integration for million-scale on consumer hardware
 
 ### Metadata
-- [ ] Typed metadata schema (String, Integer, Float, Bool, List, Null)
-- [ ] BTreeMap indexes for range queries on numeric fields
-- [ ] HashMap indexes for exact string match
+- [x] Typed metadata schema (String, Integer, Float, Bool, List, Null)
+- [x] BTreeMap indexes for range queries on numeric fields
+- [x] HashMap indexes for exact string match
 
 ### Query Engine
-- [ ] Filter AST with expression parser (And, Or, Not, Eq, Gt, Lt, In, Like)
-- [ ] Inverted index with posting list intersection/union
-- [ ] Query planner with cost-based optimization (filter-first vs search-first)
+- [x] Filter AST with expression parser (And, Or, Not, Eq, Gt, Lt, In, Like)
+- [x] Inverted index with posting list intersection/union
+- [x] Query planner with cost-based optimization (filter-first vs search-first)
 
 ### REST API
 - [ ] Axum-based HTTP server
@@ -119,14 +119,43 @@ db.insert(Record::new("x", vec![1.0, 2.0])).unwrap();
 // auto-saved — survives process restart
 ```
 
+## HNSW Approximate Search
+
+```rust
+use mini_vectordb::index::hnsw::HnswIndex;
+use mini_vectordb::index::Index;
+
+let mut idx = HnswIndex::with_params(16, 200);
+idx.insert(Record::new("a", vec![1.0, 2.0, 3.0])).unwrap();
+let results = idx.search(&[1.0, 2.0, 3.0], 5, DistanceMetric::Cosine).unwrap();
+```
+
+## Filtered Search
+
+```rust
+use mini_vectordb::metadata::{Metadata, MetadataValue};
+
+let db = VectorDB::new();
+let mut meta = Metadata::new();
+meta.insert("cat".into(), MetadataValue::String("book".into()));
+db.insert(Record::with_metadata("r1", vec![1.0], meta)).unwrap();
+
+let results = db.search_filtered(
+    &[1.0], 5, DistanceMetric::Euclidean,
+    "cat = \"book\"",
+).unwrap();
+```
+
 ## Architecture
 
 ```
 src/
 ├── core/           Record, DistanceMetric, Distance trait, errors
-├── index/          Index trait, FlatIndex (brute-force)
-├── storage/        PersistentStorage trait, JsonStorage, BinStorage
-└── lib.rs          VectorDB, StorageFormat
+├── index/          Index trait, FlatIndex, HnswIndex
+├── storage/        PersistentStorage, JsonStorage, BinStorage, MmapStore
+├── metadata/       MetadataValue enum, MetadataIndex
+├── query/          Filter parser, evaluate_filter, query planner
+└── lib.rs          VectorDB, StorageFormat, adaptive index selection
 ```
 
 Trait-based design: `Index`, `Distance`, `PersistentStorage` — swap backends without
