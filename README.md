@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 A minimal vector database in Rust. Flat and HNSW indexing, metadata filtering,
-JSON/binary/mmap persistence, and a REST API.
+JSON/binary/mmap persistence, and keyword retrieval.
 
 ## Usage
 
@@ -28,55 +28,26 @@ let results = db.search(&[0.1, 0.2, 0.3], 5, DistanceMetric::Cosine)?;
 let results = db.search_filtered(&[0.1, 0.2], 5, DistanceMetric::Euclidean, "cat = \"book\"")?;
 ```
 
-## REST API
-
-Start the server:
+## CLI
 
 ```bash
-cargo run
-```
+$ cargo run -- ingest article.txt
+Indexed 10 chunks from article.txt
 
-| Method | Path | Body | Response |
-|--------|------|------|----------|
-| `POST` | `/insert` | `{"id":"...","vector":[...]}` | `ok` |
-| `GET` | `/get/:id` | — | `{"id":"...","vector":[...]}` |
-| `POST` | `/search` | `{"vector":[...],"top_k":N,"metric":"euclidean\|cosine\|dotproduct\|manhattan\|hamming"}` | `[{"id":"...","distance":...}]` |
-| `DELETE` | `/delete/:id` | — | `ok` |
-| `POST` | `/update` | `{"id":"...","vector":[...]}` | `ok` |
-| `POST` | `/insert_batch` | `{"records":[{...},...]}` | `inserted N` |
-| `POST` | `/search_batch` | `{"queries":[{...},...]}` | `[[{...}],...]` |
-| `GET` | `/health` | — | `ok` |
-| `GET` | `/stats` | — | `{"vector_count":N}` |
-
-Example:
-
-```bash
-$ curl -X POST localhost:3000/insert \
-    -H 'Content-Type: application/json' \
-    -d '{"id":"doc1","vector":[1,2,3]}'
-ok
-
-$ curl -X POST localhost:3000/search \
-    -H 'Content-Type: application/json' \
-    -d '{"vector":[1,2,3],"top_k":3,"metric":"cosine"}'
-[{"id":"doc1","distance":0.0}]
-
-$ curl localhost:3000/health
-ok
-$ curl localhost:3000/stats
-{"vector_count":1}
+$ cargo run -- search "how does HNSW work?"
+1. Hierarchical Navigable Small World graphs, or HNSW, is one of the most popular...
 ```
 
 ## Architecture
 
 ```
-HTTP ──→ VectorDB ──→ Index (FlatIndex | HnswIndex)
-                 │         │
-                 │         └──→ Storage (Json | Binary | Mmap)
-                 │
-                 └──→ Query Engine ──→ MetadataIndex
-                          │
-                          └──→ Filter parser → evaluate → set ops
+CLI ──→ VectorDB ──→ Index (FlatIndex | HnswIndex)
+              │         │
+              │         └──→ Storage (Json | Binary | Mmap)
+              │
+              └──→ Query Engine ──→ MetadataIndex
+                       │
+                       └──→ Filter parser → evaluate → set ops
 ```
 
 ## Development
