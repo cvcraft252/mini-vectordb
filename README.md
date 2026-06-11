@@ -30,34 +30,42 @@ let results = db.search_filtered(&[0.1, 0.2], 5, DistanceMetric::Euclidean, "cat
 
 ## REST API
 
+Start the server:
+
 ```bash
 cargo run
 ```
 
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `POST` | `/insert` | `{"id":"...","vector":[...]}` | `ok` |
+| `GET` | `/get/:id` | — | `{"id":"...","vector":[...]}` |
+| `POST` | `/search` | `{"vector":[...],"top_k":N,"metric":"euclidean\|cosine\|dotproduct\|manhattan\|hamming"}` | `[{"id":"...","distance":...}]` |
+| `DELETE` | `/delete/:id` | — | `ok` |
+| `POST` | `/update` | `{"id":"...","vector":[...]}` | `ok` |
+| `POST` | `/insert_batch` | `{"records":[{...},...]}` | `inserted N` |
+| `POST` | `/search_batch` | `{"queries":[{...},...]}` | `[[{...}],...]` |
+| `GET` | `/health` | — | `ok` |
+| `GET` | `/stats` | — | `{"vector_count":N}` |
+
+Example:
+
 ```bash
-# insert with typed metadata
-$ curl -X POST localhost:3000/insert -H 'Content-Type: application/json' \
-    -d '{"id":"book1","vector":[1,2,3]}'
+$ curl -X POST localhost:3000/insert \
+    -H 'Content-Type: application/json' \
+    -d '{"id":"doc1","vector":[1,2,3]}'
 ok
 
-# cosine vs euclidean search
-$ curl -X POST localhost:3000/search -H 'Content-Type: application/json' \
+$ curl -X POST localhost:3000/search \
+    -H 'Content-Type: application/json' \
     -d '{"vector":[1,2,3],"top_k":3,"metric":"cosine"}'
-[{"id":"book1","distance":0.0}]
+[{"id":"doc1","distance":0.0}]
 
-# batch insert
-$ curl -X POST localhost:3000/insert_batch -H 'Content-Type: application/json' \
-    -d '{"records":[{"id":"a","vector":[1,0]},{"id":"b","vector":[0,1]}]}'
-inserted 2
-
-# health and stats
 $ curl localhost:3000/health
 ok
 $ curl localhost:3000/stats
-{"vector_count":3}
+{"vector_count":1}
 ```
-
-Full API: `POST /insert`, `GET /get/:id`, `POST /search`, `DELETE /delete/:id`, `POST /update`, `POST /insert_batch`, `POST /search_batch`, `GET /health`, `GET /stats`.
 
 ## Architecture
 
