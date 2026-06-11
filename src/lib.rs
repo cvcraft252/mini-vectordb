@@ -3,6 +3,7 @@ pub mod core;
 pub mod index;
 pub mod metadata;
 pub mod query;
+pub mod rag;
 pub mod storage;
 
 use std::path::PathBuf;
