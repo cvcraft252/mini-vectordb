@@ -35,16 +35,26 @@ cargo run
 ```
 
 ```bash
+# insert with typed metadata
 $ curl -X POST localhost:3000/insert -H 'Content-Type: application/json' \
-    -d '{"id":"v1","vector":[1,2,3]}'
+    -d '{"id":"book1","vector":[1,2,3]}'
 ok
 
+# cosine vs euclidean search
 $ curl -X POST localhost:3000/search -H 'Content-Type: application/json' \
-    -d '{"vector":[1,2,3],"top_k":1}'
-[{"id":"v1","distance":0.0}]
+    -d '{"vector":[1,2,3],"top_k":3,"metric":"cosine"}'
+[{"id":"book1","distance":0.0}]
 
-$ curl localhost:3000/get/v1
-{"id":"v1","vector":[1.0,2.0,3.0]}
+# batch insert
+$ curl -X POST localhost:3000/insert_batch -H 'Content-Type: application/json' \
+    -d '{"records":[{"id":"a","vector":[1,0]},{"id":"b","vector":[0,1]}]}'
+inserted 2
+
+# health and stats
+$ curl localhost:3000/health
+ok
+$ curl localhost:3000/stats
+{"vector_count":3}
 ```
 
 Full API: `POST /insert`, `GET /get/:id`, `POST /search`, `DELETE /delete/:id`, `POST /update`, `POST /insert_batch`, `POST /search_batch`, `GET /health`, `GET /stats`.
