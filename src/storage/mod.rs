@@ -2,6 +2,8 @@
 pub mod bin_store;
 /// JSON file persistence.
 pub mod json_store;
+/// Memory-mapped vector storage.
+pub mod mmap_store;
 
 use crate::core::Result;
 use std::path::Path;
