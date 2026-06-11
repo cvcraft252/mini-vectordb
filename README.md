@@ -45,13 +45,13 @@ with metadata filtering, persistence, and a REST API. Each milestone is standalo
 ### REST API
 - [x] Axum-based HTTP server
 - [x] CRUD endpoints (POST /insert, GET /get/:id, POST /search, DELETE /delete)
-- [ ] Batch endpoints (POST /insert_batch, POST /search_batch)
-- [ ] Health check and database statistics endpoints
+- [x] Batch endpoints (POST /insert_batch, POST /search_batch)
+- [x] Health check and database statistics endpoints
 
 ### RAG Demo
-- [ ] Document chunking and embedding pipeline
-- [ ] Semantic retrieval with context assembly
-- [ ] Interactive CLI or web demo with source attribution
+- [x] Document chunking and embedding pipeline
+- [x] Semantic retrieval with context assembly
+- [x] Interactive CLI or web demo with source attribution
 
 ## Quick Start
 
