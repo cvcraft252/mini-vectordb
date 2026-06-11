@@ -30,7 +30,7 @@ with metadata filtering, persistence, and a REST API. Each milestone is standalo
 - [x] Binary persistence (MVDB magic header, raw f32 encoding)
 - [x] Auto-persistence — configurable auto-save on every mutation
 - [x] Memory-mapped vector storage for GB-scale datasets
-- [ ] Mmap + HNSW integration for million-scale on consumer hardware
+- [x] Mmap + HNSW integration for million-scale on consumer hardware
 
 ### Metadata
 - [x] Typed metadata schema (String, Integer, Float, Bool, List, Null)
