@@ -53,7 +53,7 @@ with metadata filtering, persistence, and a REST API. Each milestone is standalo
 - [x] Semantic retrieval with context assembly
 - [x] Interactive CLI or web demo with source attribution
 
-## Quick Start
+## Usage
 
 ```rust
 use mini_vectordb::core::metric::DistanceMetric;
@@ -61,89 +61,8 @@ use mini_vectordb::core::record::Record;
 use mini_vectordb::VectorDB;
 
 let db = VectorDB::new();
-
-db.insert(Record::new("red",  vec![1.0, 0.0, 0.0])).unwrap();
-db.insert(Record::new("green", vec![0.0, 1.0, 0.0])).unwrap();
-db.insert(Record::new("blue",  vec![0.0, 0.0, 1.0])).unwrap();
-
-let results = db.search(&[0.9, 0.1, 0.0], 2, DistanceMetric::Euclidean).unwrap();
-for sr in &results {
-    println!("{}  dist={:.4}", sr.id, sr.distance);
-}
-// red  dist=0.1414
-// green  dist=1.2728
-```
-
-## CRUD Operations
-
-```rust
-db.insert(Record::new("doc1", vec![0.1, 0.2, 0.3]))?;
-if let Some(record) = db.get("doc1")? {
-    println!("{:?}", record.vector);
-}
-db.update("doc1", vec![0.5, 0.6, 0.7])?;
-db.delete("doc1")?;
-assert_eq!(db.len(), 0);
-```
-
-## Batch Search
-
-```rust
-let queries = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
-let batch = db.search_batch(&queries, 1, DistanceMetric::Cosine)?;
-```
-
-## Persistence
-
-```rust
-use mini_vectordb::storage::json_store::JsonStorage;
-use mini_vectordb::storage::bin_store::BinStorage;
-use mini_vectordb::storage::PersistentStorage;
-
-// JSON — human-readable, diffable
-JsonStorage::from_records(records).save("db.json")?;
-let loaded = JsonStorage::load("db.json")?;
-
-// Binary — compact, fast
-BinStorage::from_records(records).save("db.bin")?;
-let loaded = BinStorage::load("db.bin")?;
-```
-
-### Auto-Persistence
-
-```rust
-use mini_vectordb::StorageFormat;
-
-let db = VectorDB::with_persistence("db.bin", StorageFormat::Binary);
-db.insert(Record::new("x", vec![1.0, 2.0])).unwrap();
-// auto-saved — survives process restart
-```
-
-## HNSW Approximate Search
-
-```rust
-use mini_vectordb::index::hnsw::HnswIndex;
-use mini_vectordb::index::Index;
-
-let mut idx = HnswIndex::with_params(16, 200);
-idx.insert(Record::new("a", vec![1.0, 2.0, 3.0])).unwrap();
-let results = idx.search(&[1.0, 2.0, 3.0], 5, DistanceMetric::Cosine).unwrap();
-```
-
-## Filtered Search
-
-```rust
-use mini_vectordb::metadata::{Metadata, MetadataValue};
-
-let db = VectorDB::new();
-let mut meta = Metadata::new();
-meta.insert("cat".into(), MetadataValue::String("book".into()));
-db.insert(Record::with_metadata("r1", vec![1.0], meta)).unwrap();
-
-let results = db.search_filtered(
-    &[1.0], 5, DistanceMetric::Euclidean,
-    "cat = \"book\"",
-).unwrap();
+db.insert(Record::new("a", vec![1.0, 2.0, 3.0]))?;
+let results = db.search(&[1.0, 2.0, 3.0], 5, DistanceMetric::Cosine)?;
 ```
 
 ## Architecture
