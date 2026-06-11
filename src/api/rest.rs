@@ -63,6 +63,11 @@ struct RecordResponse {
     vector: Vec<f32>,
 }
 
+#[derive(Serialize)]
+struct StatsResponse {
+    vector_count: usize,
+}
+
 fn parse_metric(s: &str) -> Result<DistanceMetric, String> {
     match s.to_lowercase().as_str() {
         "euclidean" | "l2" => Ok(DistanceMetric::Euclidean),
@@ -176,6 +181,16 @@ async fn search_batch(
     Json(results).into_response()
 }
 
+async fn health() -> impl IntoResponse {
+    (StatusCode::OK, "ok")
+}
+
+async fn stats(State(state): State<AppState>) -> impl IntoResponse {
+    Json(StatsResponse {
+        vector_count: state.db.len(),
+    })
+}
+
 /// Starts the HTTP server on the given port.
 pub async fn serve(db: VectorDB, port: u16) {
     let state = AppState { db: Arc::new(db) };
@@ -187,6 +202,8 @@ pub async fn serve(db: VectorDB, port: u16) {
         .route("/update", routing::post(update))
         .route("/insert_batch", routing::post(insert_batch))
         .route("/search_batch", routing::post(search_batch))
+        .route("/health", routing::get(health))
+        .route("/stats", routing::get(stats))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
