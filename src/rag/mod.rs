@@ -46,11 +46,10 @@ pub fn ingest_file(
     Ok(())
 }
 
-/// Search ingested chunks by keyword matching.
 pub fn query_keywords(db: &VectorDB, question: &str, top_k: usize) -> Vec<String> {
-    // Use LIKE matching on the text field for each word in the question.
     let words: Vec<&str> = question.split_whitespace().collect();
     let mut results = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for word in &words {
         let pattern = if word.len() > 2 { word } else { continue };
         if let Ok(rs) = db.search_filtered(
@@ -60,6 +59,10 @@ pub fn query_keywords(db: &VectorDB, question: &str, top_k: usize) -> Vec<String
             &format!("text LIKE \"%{pattern}%\""),
         ) {
             for r in rs {
+                if seen.contains(&r.id) {
+                    continue;
+                }
+                seen.insert(r.id.clone());
                 if let Ok(Some(rec)) = db.get(&r.id)
                     && let Some(MetadataValue::String(t)) = rec.metadata.get("text")
                 {
