@@ -1,6 +1,6 @@
-use mini_vectordb::storage::bin_store::BinStorage;
-use mini_vectordb::storage::PersistentStorage;
 use mini_vectordb::StorageFormat;
+use mini_vectordb::storage::PersistentStorage;
+use mini_vectordb::storage::bin_store::BinStorage;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

@@ -3,7 +3,7 @@ name = "mini-vectordb"
 version = "0.1.0"
 edition = "2024"
 authors = ["cvcraft <cvcraft@yeah.net>"]
-description = "A minimal vector database in Rust with HNSW search, metadata filtering, persistence, and a REST API."
+description = "A minimal vector database in Rust with HNSW search, metadata filtering, and persistence."
 license = "MIT"
 repository = "https://github.com/cvcraft252/mini-vectordb"
 
@@ -15,5 +15,3 @@ rayon = "1"
 rand = "0.8"
 memmap2 = "0.9"
 text-splitter = "0.18"
-axum = "0.7"
-tokio = { version = "1", features = ["full"] }
