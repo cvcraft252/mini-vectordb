@@ -73,6 +73,8 @@ src/
 ├── storage/        PersistentStorage, JsonStorage, BinStorage, MmapStore
 ├── metadata/       MetadataValue enum, MetadataIndex
 ├── query/          Filter parser, evaluate_filter, query planner
+├── api/            REST API server (insert, search, delete, batch, health)
+├── rag/            Document chunking and keyword retrieval
 └── lib.rs          VectorDB, StorageFormat, adaptive index selection
 ```
 
