@@ -67,3 +67,30 @@ fn write_and_open_10000_records() {
     assert_eq!(store.get("9999").unwrap().vector.len(), dim);
     cleanup(path);
 }
+
+// ── HNSW + mmap integration ──
+
+#[test]
+fn hnsw_from_mmap_search() {
+    let path = "target/test_mmap_hnsw.bin";
+    let n = 50;
+    let records: Vec<Record> = (0..n)
+        .map(|i| {
+            let angle = i as f32 * 0.2;
+            Record::new(format!("{i}"), vec![angle.cos(), angle.sin()])
+        })
+        .collect();
+    MmapStore::write(path, &records).unwrap();
+
+    let store = MmapStore::open(path).unwrap();
+    let idx = mini_vectordb::index::hnsw::HnswIndex::from_mmap_store(&store).unwrap();
+    assert_eq!(idx.len(), n);
+
+    use mini_vectordb::core::metric::DistanceMetric;
+    use mini_vectordb::index::Index;
+    let results = idx
+        .search(&[1.0, 0.0], 3, DistanceMetric::Euclidean)
+        .unwrap();
+    assert!(!results.is_empty());
+    cleanup(path);
+}

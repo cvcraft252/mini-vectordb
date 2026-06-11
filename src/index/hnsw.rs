@@ -377,6 +377,22 @@ impl HnswIndex {
             id_to_idx,
         })
     }
+
+    /// Build an HNSW index from vectors stored in a memory-mapped file.
+    ///
+    /// Reads all vectors from the mmap store, inserts them into the index
+    /// with sequential numeric IDs. The resulting index can search over
+    /// large datasets loaded from disk.
+    pub fn from_mmap_store(mmap: &crate::storage::mmap_store::MmapStore) -> Result<Self> {
+        let mut idx = Self::new();
+        for id in mmap.ids() {
+            let record = mmap
+                .get(id)
+                .ok_or_else(|| VectorDBError::Other(format!("missing id: {id}")))?;
+            idx.insert(record)?;
+        }
+        Ok(idx)
+    }
 }
 
 impl Index for HnswIndex {
