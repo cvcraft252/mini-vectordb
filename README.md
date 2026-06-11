@@ -3,8 +3,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.95%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-A minimal progressive vector database in Rust — from brute-force exact search to HNSW,
-with metadata filtering, persistence, and a REST API. Each milestone is standalone.
+A minimal vector database in Rust with HNSW search, metadata filtering, persistence, and a REST API.
 
 ## Features
 
