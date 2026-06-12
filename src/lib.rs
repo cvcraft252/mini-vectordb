@@ -1,5 +1,3 @@
-//! Vector database with auto-upgrade to HNSW and metadata filtering.
-
 pub mod core;
 pub mod embed;
 pub mod index;
@@ -12,69 +10,50 @@ use std::sync::RwLock;
 use crate::core::metric::DistanceMetric;
 use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
+use crate::embed::EmbedEngine;
 use crate::index::flat::FlatIndex;
 use crate::index::hnsw::HnswIndex;
 use crate::index::{Index, SearchResult};
 use crate::metadata::index::MetadataIndex;
+use crate::metadata::{Metadata, MetadataValue};
 use crate::query::filter::parse_filter;
 
 const UPGRADE_THRESHOLD: usize = 1000;
 
-/// Thread-safe vector database. Uses FlatIndex below `UPGRADE_THRESHOLD`,
-/// auto-upgrades to HNSW above it. Build metric matches `with_metric()`.
 pub struct VectorDB {
     index: RwLock<Box<dyn Index>>,
-    metadata_index: RwLock<MetadataIndex>,
-    metric: DistanceMetric,
 }
 
 impl VectorDB {
-    /// Creates an empty database with Cosine metric.
     pub fn new() -> Self {
-        Self::with_metric(DistanceMetric::Cosine)
-    }
-
-    /// Creates an empty database with the given distance metric.
-    pub fn with_metric(metric: DistanceMetric) -> Self {
         Self {
             index: RwLock::new(Box::new(FlatIndex::new())),
-            metadata_index: RwLock::new(MetadataIndex::new()),
-            metric,
         }
     }
 
-    /// Best-effort upgrade to HNSW. On failure, keeps FlatIndex — the
-    /// database is still functional, just slower.
-    fn upgrade_to_hnsw(&self, index: &mut Box<dyn Index>) {
+    fn upgrade_to_hnsw(&self, index: &mut Box<dyn Index>) -> Result<()> {
         let records = index.records();
-        let mut hnsw = HnswIndex::with_params_and_metric(16, 200, self.metric);
+        let mut hnsw = HnswIndex::new();
         for r in records {
-            if hnsw.insert(r).is_err() {
-                // Upgrade failed: keep FlatIndex, it still works correctly.
-                return;
-            }
+            hnsw.insert(r)?;
         }
         *index = Box::new(hnsw);
+        Ok(())
     }
 
-    /// Inserts a record and syncs the metadata index. Triggers HNSW upgrade at threshold.
     pub fn insert(&self, record: Record) -> Result<()> {
-        let id = record.id.clone();
-        let meta = record.metadata.clone();
-
-        {
-            let mut index = self.index.write().expect("RwLock is never poisoned");
-            index.insert(record)?;
-            if index.len() == UPGRADE_THRESHOLD {
-                self.upgrade_to_hnsw(&mut index);
-            }
+        let mut index = self.index.write().expect("RwLock is never poisoned");
+        index.insert(record)?;
+        if index.len() == UPGRADE_THRESHOLD {
+            self.upgrade_to_hnsw(&mut index)?;
         }
+        Ok(())
+    }
 
-        self.metadata_index
-            .write()
-            .expect("RwLock is never poisoned")
-            .index_record(&id, &meta);
-
+    pub fn insert_batch(&self, records: &[Record]) -> Result<()> {
+        for r in records {
+            self.insert(r.clone())?;
+        }
         Ok(())
     }
 
@@ -112,10 +91,11 @@ impl VectorDB {
         let filter = parse_filter(filter_expr)
             .map_err(|e| VectorDBError::Other(format!("filter parse error: {e}")))?;
         let index = self.index.read().expect("RwLock is never poisoned");
-        let meta_idx = self
-            .metadata_index
-            .read()
-            .expect("RwLock is never poisoned");
+        let records = index.records();
+        let mut meta_idx = MetadataIndex::new();
+        for r in &records {
+            meta_idx.index_record(&r.id, &r.metadata);
+        }
         crate::query::planner::execute_filtered_search(
             query, top_k, metric, &filter, &meta_idx, &**index,
         )
@@ -125,69 +105,32 @@ impl VectorDB {
         self.index.read().expect("RwLock is never poisoned").get(id)
     }
 
-    /// Deletes a record. Syncs the metadata index.
     pub fn delete(&self, id: &str) -> Result<()> {
-        let meta = {
-            let index = self.index.read().expect("RwLock is never poisoned");
-            index.get(id)?.map(|r| r.metadata)
-        };
-
-        {
-            let mut index = self.index.write().expect("RwLock is never poisoned");
-            index.delete(id)?;
-        }
-
-        if let Some(meta) = meta {
-            self.metadata_index
-                .write()
-                .expect("RwLock is never poisoned")
-                .deindex_record(id, &meta);
-        }
-
-        Ok(())
+        let mut index = self.index.write().expect("RwLock is never poisoned");
+        index.delete(id)
     }
 
-    /// Updates the vector of an existing record. Metadata is preserved.
     pub fn update(&self, id: &str, vector: Vec<f32>) -> Result<()> {
-        let dim = vector.len();
-        if dim == 0 {
-            return Err(VectorDBError::EmptyVector);
-        }
-
-        let old_meta = {
-            let index = self.index.read().expect("RwLock is never poisoned");
-            let record = index.get(id)?;
-            let record = record.ok_or_else(|| VectorDBError::NotFound(id.to_string()))?;
-            if dim != record.vector.len() {
+        let mut index = self.index.write().expect("RwLock is never poisoned");
+        let old = index.get(id)?;
+        if let Some(mut record) = old {
+            let dim = vector.len();
+            if dim == 0 {
+                return Err(VectorDBError::EmptyVector);
+            }
+            let stored_dim = record.vector.len();
+            if dim != stored_dim {
                 return Err(VectorDBError::DimensionMismatch {
-                    expected: record.vector.len(),
+                    expected: stored_dim,
                     actual: dim,
                 });
             }
-            record.metadata.clone()
-        };
-
-        // Delete+re-insert under write lock so the index stays consistent.
-        {
-            let mut index = self.index.write().expect("RwLock is never poisoned");
+            record.vector = vector;
             index.delete(id)?;
-            index.insert(Record::with_metadata(
-                id.to_string(),
-                vector,
-                old_meta.clone(),
-            ))?;
+            index.insert(record)
+        } else {
+            Err(VectorDBError::NotFound(id.to_string()))
         }
-
-        // Re-sync metadata index even though values haven't changed — keeps
-        // things correct if MetadataIndex ever adds ref-counting semantics.
-        let mut meta_idx = self
-            .metadata_index
-            .write()
-            .expect("RwLock is never poisoned");
-        meta_idx.deindex_record(id, &old_meta);
-        meta_idx.index_record(id, &old_meta);
-
-        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -197,10 +140,140 @@ impl VectorDB {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    pub fn records(&self) -> Vec<Record> {
+        self.index
+            .read()
+            .expect("RwLock is never poisoned")
+            .records()
+    }
 }
 
 impl Default for VectorDB {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub fn chunk_text(text: &str, chunk_size: usize) -> Vec<String> {
+    text_splitter::TextSplitter::new(chunk_size)
+        .chunks(text)
+        .map(|c| c.to_string())
+        .collect()
+}
+
+pub struct VectraEngine {
+    db: VectorDB,
+    embedder: Box<dyn EmbedEngine>,
+}
+
+impl VectraEngine {
+    pub fn new(embedder: Box<dyn EmbedEngine>) -> Self {
+        Self {
+            db: VectorDB::new(),
+            embedder,
+        }
+    }
+
+    pub fn init(name: &str) -> Result<()> {
+        if crate::storage::vectra_store::project_exists(name) {
+            return Err(VectorDBError::Other(format!(
+                "project '{name}' already exists"
+            )));
+        }
+        crate::storage::vectra_store::save_records(name, &[])
+    }
+
+    pub fn load(name: &str) -> Result<Self> {
+        let records = crate::storage::vectra_store::load_records(name)?;
+        if records.is_empty() {
+            return Err(VectorDBError::Other(format!(
+                "project '{name}' is empty. Run 'add' first."
+            )));
+        }
+        let db = VectorDB::new();
+        db.insert_batch(&records)?;
+        Ok(Self {
+            db,
+            embedder: Box::new(
+                crate::embed::FastEmbedEngine::try_new()
+                    .map_err(|e| VectorDBError::Other(e.to_string()))?,
+            ),
+        })
+    }
+
+    pub fn ingest(&self, path: &str, chunk_size: usize) -> Result<usize> {
+        let text =
+            std::fs::read_to_string(path).map_err(|e| VectorDBError::Other(e.to_string()))?;
+        let chunks = chunk_text(&text, chunk_size);
+        let embeddings = self
+            .embedder
+            .embed(&chunks)
+            .map_err(|e| VectorDBError::Other(e.to_string()))?;
+
+        let mut records = Vec::with_capacity(chunks.len());
+        for (i, (chunk, vec)) in chunks.iter().zip(embeddings).enumerate() {
+            let mut meta = Metadata::new();
+            meta.insert("source".into(), MetadataValue::String(path.into()));
+            meta.insert("text".into(), MetadataValue::String(chunk.clone()));
+            records.push(Record::with_metadata(format!("{path}:{i}"), vec, meta));
+        }
+        self.db.insert_batch(&records)?;
+        Ok(chunks.len())
+    }
+
+    pub fn query(&self, text: &str, top_k: usize) -> Result<Vec<String>> {
+        let q_vec = self
+            .embedder
+            .embed(&[text.into()])
+            .map_err(|e| VectorDBError::Other(e.to_string()))?;
+        let query_vec = &q_vec[0];
+        let results = self.db.search(query_vec, top_k, DistanceMetric::Cosine)?;
+        let mut chunks = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for r in results {
+            if seen.contains(&r.id) {
+                continue;
+            }
+            seen.insert(r.id.clone());
+            if let Ok(Some(rec)) = self.db.get(&r.id)
+                && let Some(MetadataValue::String(t)) = rec.metadata.get("text")
+            {
+                chunks.push(t.clone());
+            }
+        }
+        Ok(chunks)
+    }
+
+    pub fn query_filtered(&self, text: &str, filter: &str, top_k: usize) -> Result<Vec<String>> {
+        let q_vec = self
+            .embedder
+            .embed(&[text.into()])
+            .map_err(|e| VectorDBError::Other(e.to_string()))?;
+        let results = self
+            .db
+            .search_filtered(&q_vec[0], top_k, DistanceMetric::Cosine, filter)?;
+        let mut chunks = Vec::new();
+        for r in results {
+            if let Ok(Some(rec)) = self.db.get(&r.id)
+                && let Some(MetadataValue::String(t)) = rec.metadata.get("text")
+            {
+                chunks.push(t.clone());
+            }
+        }
+        Ok(chunks)
+    }
+
+    pub fn save(&self, name: &str) -> Result<()> {
+        let records = self.db.records();
+        crate::storage::vectra_store::save_records(name, &records)
+    }
+
+    pub fn len(&self) -> usize {
+        self.db.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }

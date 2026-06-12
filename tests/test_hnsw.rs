@@ -101,8 +101,12 @@ fn search_returns_results_for_nonempty_index() {
         .unwrap();
     assert!(!results.is_empty(), "should return at least one result");
     assert!(results.len() <= 3);
-    assert!(results[0].distance <= results[1].distance);
-    assert!(results[1].distance <= results[2].distance);
+    assert!(
+        results
+            .iter()
+            .zip(results.iter().skip(1))
+            .all(|(a, b)| a.distance <= b.distance)
+    );
 }
 
 #[test]
