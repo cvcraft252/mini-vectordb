@@ -310,6 +310,7 @@ impl Engine {
 
         let body = serde_json::json!({
             "model": model,
+            "temperature": 0.0,
             "messages": [
                 {"role": "system", "content": "You are a helpful assistant. Answer based on the provided context."},
                 {"role": "user", "content": prompt}
