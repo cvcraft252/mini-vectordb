@@ -28,20 +28,26 @@ let results = db.search(&[0.1, 0.2, 0.3], 5, DistanceMetric::Cosine)?;
 let results = db.search_filtered(&[0.1, 0.2], 5, DistanceMetric::Euclidean, "cat = \"book\"")?;
 ```
 
-## CLI
+## Usage
 
-```bash
-$ cargo run -- ingest article.txt
-Indexed 10 chunks from article.txt
+```rust
+use mini_vectordb::{Engine, embed::FastEmbedEngine};
 
-$ cargo run -- search "how does HNSW work?"
-1. Hierarchical Navigable Small World graphs, or HNSW, is one of the most popular...
+let embedder = Box::new(FastEmbedEngine::try_new().unwrap());
+let engine = Engine::new(embedder);
+
+// ingest documents
+engine.ingest("./docs/business_faq.txt", 1000).unwrap();
+engine.save("my_project").unwrap();
+
+// semantic search
+let chunks = engine.query("what is the return policy", 3).unwrap();
 ```
 
 ## Architecture
 
 ```
-CLI ──→ VectorDB ──→ Index (FlatIndex | HnswIndex)
+Engine ──→ VectorDB ──→ Index (FlatIndex | HnswIndex)
               │         │
               │         └──→ Storage (Json | Binary | Mmap)
               │
