@@ -3,8 +3,9 @@
 [![Rust](https://img.shields.io/badge/Rust-1.95%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-A minimal vector database in Rust. Flat and HNSW indexing, metadata filtering,
-semantic search with local embeddings.
+A minimal vector database in Rust with HNSW search, metadata filtering,
+bincode persistence, PDF ingestion, local and API-based embeddings,
+and LLM-powered RAG generation.
 
 ## Usage
 
@@ -13,7 +14,7 @@ semantic search with local embeddings.
 mini-vectordb = { git = "https://github.com/cvcraft252/mini-vectordb" }
 ```
 
-Local model (fastembed):
+Local model via fastembed:
 
 ```rust
 use mini_vectordb::{Engine, embed::FastEmbedEngine};
@@ -38,13 +39,15 @@ let answer = engine.generate("what is multi-head attention").unwrap();
 ## Architecture
 
 ```
-Engine ──→ VectorDB ──→ Index (FlatIndex | HnswIndex)
-              │         │
-              │         └──→ Embed (FastEmbedEngine)
-              │
-              └──→ Query Engine ──→ MetadataIndex
-                       │
-                       └──→ Filter parser → evaluate → set ops
+Engine
+  ├── EmbedEngine (FastEmbed | ApiEmbed ← try_new_auto)
+  ├── VectorDB
+  │     ├── Index (FlatIndex → HnswIndex at 1000 records)
+  │     ├── Store (bincode → ~/.cache/mini-vectordb/projects/<name>/)
+  │     └── Query Engine (filter parser → evaluate → set ops)
+  └── generate()
+        ├── query()     → embed question → ANN search → top-k chunks
+        └── llm call    → assemble prompt → POST chat/completions
 ```
 
 ## Development
