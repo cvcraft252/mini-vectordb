@@ -162,12 +162,12 @@ pub fn chunk_text(text: &str, chunk_size: usize) -> Vec<String> {
         .collect()
 }
 
-pub struct VectraEngine {
+pub struct Engine {
     db: VectorDB,
     embedder: Box<dyn EmbedEngine>,
 }
 
-impl VectraEngine {
+impl Engine {
     pub fn new(embedder: Box<dyn EmbedEngine>) -> Self {
         Self {
             db: VectorDB::new(),
@@ -176,16 +176,16 @@ impl VectraEngine {
     }
 
     pub fn init(name: &str) -> Result<()> {
-        if crate::storage::vectra_store::project_exists(name) {
+        if crate::storage::project_store::project_exists(name) {
             return Err(VectorDBError::Other(format!(
                 "project '{name}' already exists"
             )));
         }
-        crate::storage::vectra_store::save_records(name, &[])
+        crate::storage::project_store::save_records(name, &[])
     }
 
     pub fn load(name: &str) -> Result<Self> {
-        let records = crate::storage::vectra_store::load_records(name)?;
+        let records = crate::storage::project_store::load_records(name)?;
         if records.is_empty() {
             return Err(VectorDBError::Other(format!(
                 "project '{name}' is empty. Run 'add' first."
@@ -266,7 +266,7 @@ impl VectraEngine {
 
     pub fn save(&self, name: &str) -> Result<()> {
         let records = self.db.records();
-        crate::storage::vectra_store::save_records(name, &records)
+        crate::storage::project_store::save_records(name, &records)
     }
 
     pub fn len(&self) -> usize {

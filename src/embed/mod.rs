@@ -12,7 +12,7 @@ pub struct FastEmbedEngine {
 
 impl FastEmbedEngine {
     pub fn try_new() -> std::result::Result<Self, String> {
-        let model = match std::env::var("VECTRA_MODEL_PATH") {
+        let model = match std::env::var("MINI_VECTORDB_MODEL_PATH") {
             Ok(path) => {
                 let dir = PathBuf::from(&path);
                 if !dir.exists() {

@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-use mini_vectordb::VectraEngine;
+use mini_vectordb::Engine;
 use mini_vectordb::embed::FastEmbedEngine;
 
 #[derive(Parser)]
@@ -46,7 +46,7 @@ fn main() {
 fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
         Command::Init { name } => {
-            VectraEngine::init(&name).map_err(|e| e.to_string())?;
+            Engine::init(&name).map_err(|e| e.to_string())?;
             println!("Project '{name}' created.");
         }
         Command::Add {
@@ -58,7 +58,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 return Err(format!("file not found: {path}"));
             }
             let embedder = Box::new(FastEmbedEngine::try_new()?);
-            let engine = VectraEngine::new(embedder);
+            let engine = Engine::new(embedder);
             engine
                 .ingest(&path, chunk_size)
                 .map_err(|e| e.to_string())?;
@@ -72,7 +72,7 @@ fn run(cli: Cli) -> Result<(), String> {
             top_k,
             filter,
         } => {
-            let engine = VectraEngine::load(&name).map_err(|e| e.to_string())?;
+            let engine = Engine::load(&name).map_err(|e| e.to_string())?;
             let results = if let Some(f) = &filter {
                 engine.query_filtered(&text, f, top_k)
             } else {

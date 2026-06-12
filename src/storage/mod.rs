@@ -1,1 +1,1 @@
-pub mod vectra_store;
+pub mod project_store;
