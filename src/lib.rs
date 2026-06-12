@@ -159,7 +159,27 @@ pub fn chunk_text(text: &str, chunk_size: usize) -> Vec<String> {
     text_splitter::TextSplitter::new(chunk_size)
         .chunks(text)
         .map(|c| c.to_string())
+        .filter(|c| is_valid_chunk(c))
         .collect()
+}
+
+fn is_valid_chunk(c: &str) -> bool {
+    let text = c.trim();
+    if text.len() < 40 {
+        return false;
+    }
+    let letters: usize = text.chars().filter(|c| c.is_alphabetic()).count();
+    let garbage: usize = text
+        .chars()
+        .filter(|c| *c == '<' || *c == '>' || *c == '/' || *c == '\\')
+        .count();
+    if garbage > letters / 3 {
+        return false;
+    }
+    if text.contains("<EOS>") || text.contains("<pad>") || text.contains("<unk>") {
+        return false;
+    }
+    true
 }
 
 pub struct Engine {
@@ -202,7 +222,7 @@ impl Engine {
         })
     }
 
-    pub fn ingest(&self, path: &str, chunk_size: usize) -> Result<usize> {
+    pub fn ingest(&mut self, path: &str, chunk_size: usize) -> Result<usize> {
         let text = if path.to_lowercase().ends_with(".pdf") {
             pdf_extract::extract_text(path).map_err(|e| VectorDBError::Other(e.to_string()))?
         } else {
@@ -225,7 +245,7 @@ impl Engine {
         Ok(chunks.len())
     }
 
-    pub fn query(&self, text: &str, top_k: usize) -> Result<Vec<String>> {
+    pub fn query(&mut self, text: &str, top_k: usize) -> Result<Vec<String>> {
         let q_vec = self
             .embedder
             .embed(&[text.into()])
@@ -248,7 +268,12 @@ impl Engine {
         Ok(chunks)
     }
 
-    pub fn query_filtered(&self, text: &str, filter: &str, top_k: usize) -> Result<Vec<String>> {
+    pub fn query_filtered(
+        &mut self,
+        text: &str,
+        filter: &str,
+        top_k: usize,
+    ) -> Result<Vec<String>> {
         let q_vec = self
             .embedder
             .embed(&[text.into()])
@@ -272,7 +297,7 @@ impl Engine {
         crate::storage::store::save_records(name, &records)
     }
 
-    pub fn generate(&self, question: &str) -> Result<String> {
+    pub fn generate(&mut self, question: &str) -> Result<String> {
         let chunks = self.query(question, 3)?;
         let context = chunks.join("\n---\n");
         let prompt = format!(
