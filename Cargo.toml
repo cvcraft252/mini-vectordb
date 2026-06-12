@@ -15,3 +15,5 @@ rayon = "1"
 rand = "0.8"
 memmap2 = "0.9"
 text-splitter = "0.18"
+fastembed = "4"
+tokio = { version = "1", features = ["full"] }
