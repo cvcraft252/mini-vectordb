@@ -203,8 +203,11 @@ impl Engine {
     }
 
     pub fn ingest(&self, path: &str, chunk_size: usize) -> Result<usize> {
-        let text =
-            std::fs::read_to_string(path).map_err(|e| VectorDBError::Other(e.to_string()))?;
+        let text = if path.to_lowercase().ends_with(".pdf") {
+            pdf_extract::extract_text(path).map_err(|e| VectorDBError::Other(e.to_string()))?
+        } else {
+            std::fs::read_to_string(path).map_err(|e| VectorDBError::Other(e.to_string()))?
+        };
         let chunks = chunk_text(&text, chunk_size);
         let embeddings = self
             .embedder
