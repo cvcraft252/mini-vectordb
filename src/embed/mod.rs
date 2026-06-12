@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::core::Result;
 
 pub trait EmbedEngine: Send + Sync {
@@ -10,8 +12,22 @@ pub struct FastEmbedEngine {
 
 impl FastEmbedEngine {
     pub fn try_new() -> std::result::Result<Self, String> {
-        let model =
-            fastembed::TextEmbedding::try_new(Default::default()).map_err(|e| e.to_string())?;
+        let model = match std::env::var("VECTRA_MODEL_PATH") {
+            Ok(path) => {
+                let dir = PathBuf::from(&path);
+                if !dir.exists() {
+                    return Err(format!("model path not found: {path}"));
+                }
+                fastembed::TextEmbedding::try_new(
+                    fastembed::InitOptions::new(fastembed::EmbeddingModel::AllMiniLML6V2)
+                        .with_cache_dir(dir),
+                )
+                .map_err(|e| e.to_string())?
+            }
+            Err(_) => {
+                fastembed::TextEmbedding::try_new(Default::default()).map_err(|e| e.to_string())?
+            }
+        };
         Ok(Self { model })
     }
 }

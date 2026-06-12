@@ -15,7 +15,7 @@ struct RecordEntry {
 fn project_dir(name: &str) -> Result<PathBuf> {
     let base = dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("vectra")
+        .join("mini-vectordb")
         .join("projects")
         .join(name);
     fs::create_dir_all(&base).map_err(|e| VectorDBError::Other(e.to_string()))?;
