@@ -176,16 +176,16 @@ impl Engine {
     }
 
     pub fn init(name: &str) -> Result<()> {
-        if crate::storage::project_store::project_exists(name) {
+        if crate::storage::store::project_exists(name) {
             return Err(VectorDBError::Other(format!(
                 "project '{name}' already exists"
             )));
         }
-        crate::storage::project_store::save_records(name, &[])
+        crate::storage::store::save_records(name, &[])
     }
 
     pub fn load(name: &str) -> Result<Self> {
-        let records = crate::storage::project_store::load_records(name)?;
+        let records = crate::storage::store::load_records(name)?;
         if records.is_empty() {
             return Err(VectorDBError::Other(format!(
                 "project '{name}' is empty. Run 'add' first."
@@ -266,7 +266,7 @@ impl Engine {
 
     pub fn save(&self, name: &str) -> Result<()> {
         let records = self.db.records();
-        crate::storage::project_store::save_records(name, &records)
+        crate::storage::store::save_records(name, &records)
     }
 
     pub fn len(&self) -> usize {
