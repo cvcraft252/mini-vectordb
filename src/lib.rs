@@ -312,7 +312,7 @@ impl Engine {
             "model": model,
             "temperature": 0.0,
             "messages": [
-                {"role": "system", "content": "You are a helpful assistant. Answer based on the provided context."},
+                {"role": "system", "content": "Answer the question clearly and concisely using the context below. Do not say \"according to the context\" or \"the text states\" — just answer naturally."},
                 {"role": "user", "content": prompt}
             ]
         });
