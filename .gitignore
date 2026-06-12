@@ -37,3 +37,7 @@ Thumbs.db
 .codebuddy/*
 .workbuddy
 .workbuddy/*
+
+# Cache
+.fastembed_cache/
+rag_db.bin

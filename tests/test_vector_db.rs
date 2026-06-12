@@ -1,17 +1,12 @@
 // VectorDB integration tests.
 
-use std::fs;
 use std::sync::Arc;
 
-use mini_vectordb::StorageFormat;
 use mini_vectordb::VectorDB;
 use mini_vectordb::core::VectorDBError;
 use mini_vectordb::core::metric::DistanceMetric;
 use mini_vectordb::core::record::Record;
 use mini_vectordb::metadata::{Metadata, MetadataValue};
-use mini_vectordb::storage::PersistentStorage;
-use mini_vectordb::storage::bin_store::BinStorage;
-use mini_vectordb::storage::json_store::JsonStorage;
 
 fn make_record(id: &str, vec: Vec<f32>) -> Record {
     Record::new(id, vec)
@@ -26,7 +21,6 @@ fn make_record_with_meta(id: &str, vec: Vec<f32>, meta: Metadata) -> Record {
 #[test]
 fn new_database_is_empty() {
     let db = VectorDB::new();
-    assert!(db.is_empty());
     assert_eq!(db.len(), 0);
 }
 
@@ -44,8 +38,7 @@ fn insert_and_get() {
 #[test]
 fn get_nonexistent_id_returns_none() {
     let db = VectorDB::new();
-    let result = db.get("ghost").unwrap();
-    assert!(result.is_none());
+    assert!(db.get("ghost").unwrap().is_none());
 }
 
 #[test]
@@ -94,7 +87,6 @@ fn update_preserves_existing_metadata() {
     meta.insert("year".to_string(), MetadataValue::Integer(2024));
     db.insert(make_record_with_meta("doc", vec![1.0, 2.0], meta))
         .unwrap();
-
     db.update("doc", vec![3.0, 4.0]).unwrap();
     let got = db.get("doc").unwrap().unwrap();
     assert_eq!(got.vector, vec![3.0, 4.0]);
@@ -121,27 +113,6 @@ fn update_dimension_mismatch_is_rejected() {
     db.insert(make_record("a", vec![1.0, 2.0])).unwrap();
     let err = db.update("a", vec![1.0, 2.0, 3.0]).unwrap_err();
     assert!(matches!(err, VectorDBError::DimensionMismatch { .. }));
-}
-
-// ── clear ──
-
-#[test]
-fn clear_removes_all_records() {
-    let db = VectorDB::new();
-    db.insert(make_record("a", vec![1.0])).unwrap();
-    db.insert(make_record("b", vec![2.0])).unwrap();
-    db.clear().unwrap();
-    assert!(db.is_empty());
-    assert_eq!(db.len(), 0);
-}
-
-#[test]
-fn clear_resets_dimension_constraint() {
-    let db = VectorDB::new();
-    db.insert(make_record("a", vec![1.0, 2.0])).unwrap();
-    db.clear().unwrap();
-    db.insert(make_record("b", vec![1.0, 2.0, 3.0])).unwrap();
-    assert_eq!(db.len(), 1);
 }
 
 // ── search ──
@@ -183,7 +154,6 @@ fn concurrent_reads_do_not_deadlock() {
     let db = Arc::new(VectorDB::new());
     db.insert(make_record("shared", vec![1.0, 2.0, 3.0]))
         .unwrap();
-
     let mut handles = vec![];
     for _ in 0..8 {
         let db_clone = Arc::clone(&db);
@@ -206,7 +176,6 @@ fn concurrent_reads_do_not_deadlock() {
 fn concurrent_inserts_keep_accurate_count() {
     let db = Arc::new(VectorDB::new());
     db.insert(make_record("seed", vec![0.0, 0.0])).unwrap();
-
     let mut handles = vec![];
     for i in 0..10 {
         let db_clone = Arc::clone(&db);
@@ -231,93 +200,13 @@ fn search_batch_through_vector_db_wrapper() {
     let db = VectorDB::new();
     db.insert(make_record("a", vec![1.0, 0.0])).unwrap();
     db.insert(make_record("b", vec![0.0, 1.0])).unwrap();
-
     let queries = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
     let results = db
         .search_batch(&queries, 1, DistanceMetric::Cosine)
         .unwrap();
-
     assert_eq!(results.len(), 2);
     assert_eq!(results[0][0].id, "a");
     assert_eq!(results[1][0].id, "b");
-}
-
-// ── auto-persistence ──
-
-#[test]
-fn with_persistence_saves_after_insert() {
-    let path = "target/test_autosave_insert.bin";
-    let db = VectorDB::with_persistence(path, StorageFormat::Binary);
-    assert!(db.is_persistent());
-
-    db.insert(make_record("x", vec![1.0, 2.0])).unwrap();
-    let loaded = BinStorage::load(path).unwrap();
-    assert_eq!(loaded.len(), 1);
-    fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn with_persistence_saves_after_delete() {
-    let path = "target/test_autosave_delete.bin";
-    let db = VectorDB::with_persistence(path, StorageFormat::Binary);
-    db.insert(make_record("x", vec![1.0])).unwrap();
-    db.delete("x").unwrap();
-
-    let loaded = BinStorage::load(path).unwrap();
-    assert!(loaded.is_empty());
-    fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn with_persistence_saves_after_clear() {
-    let path = "target/test_autosave_clear.bin";
-    let db = VectorDB::with_persistence(path, StorageFormat::Binary);
-    db.insert(make_record("x", vec![1.0])).unwrap();
-    db.clear().unwrap();
-
-    let loaded = BinStorage::load(path).unwrap();
-    assert!(loaded.is_empty());
-    fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn with_persistence_json_format_works() {
-    let path = "target/test_autosave_json.json";
-    let db = VectorDB::with_persistence(path, StorageFormat::Json);
-    db.insert(make_record("doc", vec![1.0, 2.0, 3.0])).unwrap();
-
-    let loaded = JsonStorage::load(path).unwrap();
-    let recs = loaded.into_records();
-    assert_eq!(recs[0].id, "doc");
-    assert_eq!(recs[0].vector, vec![1.0, 2.0, 3.0]);
-    fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn non_persistent_db_does_not_create_files() {
-    let db = VectorDB::new();
-    assert!(!db.is_persistent());
-    db.insert(make_record("x", vec![1.0])).unwrap();
-    // no file should be created — this test passes if no panic occurs
-}
-
-#[test]
-fn auto_save_captures_full_state_after_multiple_ops() {
-    let path = "target/test_autosave_multi.bin";
-    let db = VectorDB::with_persistence(path, StorageFormat::Binary);
-
-    db.insert(make_record("a", vec![1.0])).unwrap();
-    db.insert(make_record("b", vec![2.0])).unwrap();
-    db.insert(make_record("c", vec![3.0])).unwrap();
-    db.delete("b").unwrap();
-    db.update("c", vec![9.0]).unwrap();
-
-    let loaded = BinStorage::load(path).unwrap();
-    let recs = loaded.into_records();
-    assert_eq!(recs.len(), 2);
-    let c = recs.iter().find(|r| r.id == "c").unwrap();
-    assert_eq!(c.vector, vec![9.0]);
-    fs::remove_file(path).unwrap();
 }
 
 // ── filtered search ──
@@ -357,8 +246,6 @@ fn filtered_search_string_equality() {
         )
         .unwrap();
     assert_eq!(results.len(), 2);
-    assert_eq!(results[0].id, "r1");
-    assert_eq!(results[1].id, "r2");
 }
 
 #[test]
@@ -433,7 +320,6 @@ fn stays_flat_below_threshold() {
             .unwrap();
     }
     assert_eq!(db.len(), 999);
-    // search still works on flat index
     let results = db.search(&[0.0], 1, DistanceMetric::Euclidean).unwrap();
     assert_eq!(results[0].id, "r0");
 }

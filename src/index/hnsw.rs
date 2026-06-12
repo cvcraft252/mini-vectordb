@@ -325,18 +325,6 @@ impl HnswIndex {
             id_to_idx,
         })
     }
-
-    /// Builds an HNSW index from a memory-mapped store.
-    pub fn from_mmap_store(mmap: &crate::storage::mmap_store::MmapStore) -> Result<Self> {
-        let mut idx = Self::new();
-        for id in mmap.ids() {
-            let record = mmap
-                .get(id)
-                .ok_or_else(|| VectorDBError::Other(format!("missing id: {id}")))?;
-            idx.insert(record)?;
-        }
-        Ok(idx)
-    }
 }
 
 impl Index for HnswIndex {
