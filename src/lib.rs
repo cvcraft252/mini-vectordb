@@ -272,6 +272,55 @@ impl Engine {
         crate::storage::store::save_records(name, &records)
     }
 
+    pub fn generate(&self, question: &str) -> Result<String> {
+        let chunks = self.query(question, 3)?;
+        let context = chunks.join("\n---\n");
+        let prompt = format!(
+            "Answer the question using only the context below.\n\nContext:\n{context}\n\nQuestion: {question}"
+        );
+        let url = std::env::var("LLM_API_URL")
+            .unwrap_or_else(|_| "http://localhost:11434/v1/chat/completions".into());
+        let key = std::env::var("LLM_API_KEY").unwrap_or_else(|_| "ollama".into());
+        let model = std::env::var("LLM_MODEL_NAME").unwrap_or_else(|_| "llama3.2".into());
+
+        let body = serde_json::json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant. Answer based on the provided context."},
+                {"role": "user", "content": prompt}
+            ]
+        });
+
+        #[derive(serde::Deserialize)]
+        struct ChatResponse {
+            choices: Vec<ChatChoice>,
+        }
+        #[derive(serde::Deserialize)]
+        struct ChatChoice {
+            message: ChatMessage,
+        }
+        #[derive(serde::Deserialize)]
+        struct ChatMessage {
+            content: String,
+        }
+
+        let client = reqwest::blocking::Client::new();
+        let resp: ChatResponse = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {key}"))
+            .json(&body)
+            .send()
+            .map_err(|e| VectorDBError::Other(e.to_string()))?
+            .json()
+            .map_err(|e| VectorDBError::Other(e.to_string()))?;
+        let answer = resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+        Ok(answer)
+    }
+
     pub fn len(&self) -> usize {
         self.db.len()
     }
