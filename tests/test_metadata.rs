@@ -14,8 +14,8 @@ fn metadata_value_integer_eq() {
 
 #[test]
 fn metadata_value_float_eq() {
-    assert_eq!(MetadataValue::Float(3.14), MetadataValue::Float(3.14));
-    assert_ne!(MetadataValue::Float(3.14), MetadataValue::Float(3.15));
+    assert_eq!(MetadataValue::Float(2.5), MetadataValue::Float(2.5));
+    assert_ne!(MetadataValue::Float(2.5), MetadataValue::Float(2.6));
 }
 
 #[test]
@@ -83,9 +83,9 @@ fn bool_serializes_as_json_boolean() {
 
 #[test]
 fn float_serializes_with_decimal() {
-    let val = MetadataValue::Float(3.14);
+    let val = MetadataValue::Float(2.5);
     let json = serde_json::to_string(&val).unwrap();
-    assert!(json.starts_with("3.14"));
+    assert!(json.starts_with("2.5"));
 }
 
 #[test]
@@ -121,8 +121,8 @@ fn deserialize_string() {
 
 #[test]
 fn deserialize_float() {
-    let val: MetadataValue = serde_json::from_str("3.14").unwrap();
-    assert_eq!(val, MetadataValue::Float(3.14));
+    let val: MetadataValue = serde_json::from_str("2.5").unwrap();
+    assert_eq!(val, MetadataValue::Float(2.5));
 }
 
 #[test]

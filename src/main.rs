@@ -61,22 +61,41 @@ fn run(cli: Cli) -> Result<(), String> {
             let chunks = chunk_text(&text);
 
             let mut existing = vectra_store::load_records(&name).map_err(|e| e.to_string())?;
+
+            // Skip if this file was already indexed.
+            let already_indexed = existing.iter().any(|(r, _)| {
+                r.metadata
+                    .get("source")
+                    .is_some_and(|v| matches!(v, MetadataValue::String(s) if s == &path))
+            });
+            if already_indexed {
+                return Err(format!(
+                    "file already indexed: {path}. Remove existing data first or use a different project."
+                ));
+            }
+
             let db = VectorDB::new();
             for (r, _) in &existing {
                 db.insert(r.clone()).map_err(|e| e.to_string())?;
             }
 
+            let chunk_count = chunks.len();
             let embeddings = embedder.embed(&chunks)?;
             for (i, (chunk, vec)) in chunks.iter().zip(embeddings).enumerate() {
                 let mut meta = Metadata::new();
                 meta.insert("source".into(), MetadataValue::String(path.clone()));
                 meta.insert("text".into(), MetadataValue::String(chunk.clone()));
+                meta.insert("chunk_index".into(), MetadataValue::Integer(i as i64));
+                meta.insert(
+                    "chunk_count".into(),
+                    MetadataValue::Integer(chunk_count as i64),
+                );
                 let record = Record::with_metadata(format!("{path}:{i}"), vec, meta);
                 db.insert(record.clone()).map_err(|e| e.to_string())?;
                 existing.push((record, vec![]));
             }
             vectra_store::save_records(&name, &existing).map_err(|e| e.to_string())?;
-            println!("Indexed {} chunks from {path}", chunks.len());
+            println!("Indexed {chunk_count} chunks from {path}");
         }
         Command::Query {
             text,
@@ -130,8 +149,9 @@ fn run(cli: Cli) -> Result<(), String> {
     Ok(())
 }
 
+/// Splits text into chunks for embedding.
 fn chunk_text(text: &str) -> Vec<String> {
-    TextSplitter::new(1000)
+    TextSplitter::new(300)
         .chunks(text)
         .map(|c| c.to_string())
         .collect()

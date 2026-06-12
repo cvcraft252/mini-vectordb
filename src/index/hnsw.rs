@@ -11,9 +11,10 @@ use crate::core::metric::DistanceMetric;
 use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
 use crate::index::{Index, SearchResult};
+use crate::metadata::Metadata;
 
 const HNSW_MAGIC: u32 = 0x484E5357;
-const HNSW_VERSION: u32 = 1;
+const HNSW_VERSION: u32 = 2;
 
 #[derive(PartialEq)]
 struct Candidate {
@@ -46,13 +47,12 @@ fn get_random_level(m: usize) -> usize {
 struct Node {
     id: String,
     vector: Vec<f32>,
+    metadata: Metadata,
     layers: Vec<Vec<usize>>,
 }
 
-/// HNSW graph-based index for approximate nearest neighbor search.
-///
-/// Multi-layer structure: higher layers are sparser highways enabling
-/// logarithmic search time. All nodes exist in layer 0.
+/// HNSW graph index. Higher layers are sparser highways for fast traversal,
+/// layer 0 is exhaustive. Build metric determines edge connectivity.
 pub struct HnswIndex {
     nodes: Vec<Option<Node>>,
     entry_point: Option<usize>,
@@ -63,16 +63,23 @@ pub struct HnswIndex {
     dimension: usize,
     count: usize,
     id_to_idx: HashMap<String, usize>,
+    /// Distance metric used for graph construction and pruning.
+    metric: DistanceMetric,
 }
 
 impl HnswIndex {
-    /// Creates an empty HNSW index with default parameters.
+    /// Creates an empty HNSW index with default parameters and Euclidean metric.
     pub fn new() -> Self {
-        Self::with_params(DEFAULT_M, DEFAULT_EF)
+        Self::with_params_and_metric(DEFAULT_M, DEFAULT_EF, DistanceMetric::Euclidean)
     }
 
-    /// Creates an HNSW index with custom M and ef parameters.
+    /// Creates an HNSW index with custom M and ef, defaulting to Euclidean metric.
     pub fn with_params(m: usize, ef: usize) -> Self {
+        Self::with_params_and_metric(m, ef, DistanceMetric::Euclidean)
+    }
+
+    /// Creates an HNSW index with custom M, ef, and distance metric.
+    pub fn with_params_and_metric(m: usize, ef: usize, metric: DistanceMetric) -> Self {
         Self {
             nodes: vec![None],
             entry_point: None,
@@ -83,7 +90,12 @@ impl HnswIndex {
             dimension: 0,
             count: 0,
             id_to_idx: HashMap::new(),
+            metric,
         }
+    }
+
+    pub fn metric(&self) -> DistanceMetric {
+        self.metric
     }
 }
 
@@ -201,6 +213,8 @@ impl HnswIndex {
             .map(|i| i as u64)
             .unwrap_or(u64::from(u32::MAX));
         write_u64(&mut w, ep).map_err(|e| VectorDBError::Other(format!("entry: {e}")))?;
+        write_u8(&mut w, metric_to_byte(self.metric))
+            .map_err(|e| VectorDBError::Other(format!("metric: {e}")))?;
 
         for node in &self.nodes {
             match node {
@@ -221,6 +235,8 @@ impl HnswIndex {
                                 .map_err(|e| VectorDBError::Other(format!("neighbor: {e}")))?;
                         }
                     }
+                    write_metadata(&mut w, &n.metadata)
+                        .map_err(|e| VectorDBError::Other(format!("metadata: {e}")))?;
                 }
                 None => {
                     w.write_all(&[0u8])
@@ -235,7 +251,7 @@ impl HnswIndex {
         Ok(())
     }
 
-    /// Loads a previously saved HNSW graph.
+    /// Loads a saved HNSW graph. Only v2 format (with metric + metadata) is supported.
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let file = fs::File::open(path.as_ref())
             .map_err(|e| VectorDBError::Other(format!("open: {e}")))?;
@@ -247,9 +263,9 @@ impl HnswIndex {
         }
         let version =
             read_u32(&mut r).map_err(|e| VectorDBError::Other(format!("version: {e}")))?;
-        if version > HNSW_VERSION {
+        if version != HNSW_VERSION {
             return Err(VectorDBError::Other(format!(
-                "unsupported version {version}"
+                "unsupported version {version}, expected {HNSW_VERSION}"
             )));
         }
 
@@ -268,6 +284,10 @@ impl HnswIndex {
         } else {
             Some(ep_raw as usize)
         };
+        let metric_byte =
+            read_u8(&mut r).map_err(|e| VectorDBError::Other(format!("metric: {e}")))?;
+        let metric = byte_to_metric(metric_byte)
+            .ok_or_else(|| VectorDBError::Other(format!("unknown metric byte: {metric_byte}")))?;
 
         let mut nodes = Vec::new();
         let mut id_to_idx = HashMap::new();
@@ -308,9 +328,17 @@ impl HnswIndex {
                 layers.push(neighbors);
             }
 
+            let metadata = read_metadata(&mut r)
+                .map_err(|e| VectorDBError::Other(format!("metadata: {e}")))?;
+
             let node_idx = nodes.len();
             id_to_idx.insert(id.clone(), node_idx);
-            nodes.push(Some(Node { id, vector, layers }));
+            nodes.push(Some(Node {
+                id,
+                vector,
+                metadata,
+                layers,
+            }));
         }
 
         Ok(Self {
@@ -323,6 +351,7 @@ impl HnswIndex {
             dimension,
             count,
             id_to_idx,
+            metric,
         })
     }
 }
@@ -365,7 +394,11 @@ impl Index for HnswIndex {
                 SearchResult {
                     id: node.id.clone(),
                     distance: *dist,
-                    record: Record::new(&node.id, node.vector.clone()),
+                    record: Record::with_metadata(
+                        &node.id,
+                        node.vector.clone(),
+                        node.metadata.clone(),
+                    ),
                 }
             })
             .collect();
@@ -427,6 +460,7 @@ impl Index for HnswIndex {
         let node = Node {
             id: record.id.clone(),
             vector: record.vector.clone(),
+            metadata: record.metadata.clone(),
             layers,
         };
         self.nodes.push(Some(node));
@@ -437,16 +471,16 @@ impl Index for HnswIndex {
             return Ok(());
         };
 
+        // Use the configured metric, not a hardcoded default.
+        let metric = self.metric;
         let mut current = entry;
         for l in ((level + 1)..=self.max_level).rev() {
-            let layer_results =
-                self.search_layer(&record.vector, current, 1, l, metric_for_insert());
+            let layer_results = self.search_layer(&record.vector, current, 1, l, metric);
             current = layer_results[0].0;
         }
 
         for l in (0..=level.min(self.max_level)).rev() {
-            let candidates =
-                self.search_layer(&record.vector, current, self.ef, l, metric_for_insert());
+            let candidates = self.search_layer(&record.vector, current, self.ef, l, metric);
             let m_max = if l == 0 { self.m0 } else { self.m };
             let neighbors = self.select_neighbors(&candidates, m_max);
 
@@ -474,7 +508,7 @@ impl Index for HnswIndex {
                     .iter()
                     .map(|&idx| {
                         let v = &self.nodes[idx].as_ref().expect("conn exists").vector;
-                        let d = metric_for_insert().compute(&n_vec, v);
+                        let d = metric.compute(&n_vec, v);
                         (idx, d)
                     })
                     .collect();
@@ -493,19 +527,13 @@ impl Index for HnswIndex {
 
     fn delete(&mut self, id: &str) -> Result<()> {
         if let Some(&idx) = self.id_to_idx.get(id) {
-            if idx == self.entry_point.unwrap_or(0) {
-                // keep entry point as tombstone to avoid re-wiring the graph
-                self.nodes[idx] = None;
-                self.count = self.count.saturating_sub(1);
-                self.id_to_idx.remove(id);
-                if self.count == 0 {
-                    self.entry_point = None;
-                    self.dimension = 0;
-                }
-            } else {
-                self.nodes[idx] = None;
-                self.count = self.count.saturating_sub(1);
-                self.id_to_idx.remove(id);
+            // keep entry point as tombstone to avoid re-wiring the graph
+            self.nodes[idx] = None;
+            self.count = self.count.saturating_sub(1);
+            self.id_to_idx.remove(id);
+            if self.count == 0 {
+                self.entry_point = None;
+                self.dimension = 0;
             }
         }
         Ok(())
@@ -516,7 +544,7 @@ impl Index for HnswIndex {
             .id_to_idx
             .get(id)
             .and_then(|&idx| self.nodes[idx].as_ref())
-            .map(|n| Record::new(&n.id, n.vector.clone())))
+            .map(|n| Record::with_metadata(&n.id, n.vector.clone(), n.metadata.clone())))
     }
 
     fn len(&self) -> usize {
@@ -527,13 +555,44 @@ impl Index for HnswIndex {
         self.nodes
             .iter()
             .filter_map(|n| n.as_ref())
-            .map(|n| Record::new(&n.id, n.vector.clone()))
+            .map(|n| Record::with_metadata(&n.id, n.vector.clone(), n.metadata.clone()))
             .collect()
     }
 }
 
-fn metric_for_insert() -> DistanceMetric {
-    DistanceMetric::Euclidean
+// ── Metric byte encoding ──
+
+fn metric_to_byte(m: DistanceMetric) -> u8 {
+    match m {
+        DistanceMetric::Cosine => 0,
+        DistanceMetric::Euclidean => 1,
+        DistanceMetric::DotProduct => 2,
+        DistanceMetric::Manhattan => 3,
+        DistanceMetric::Hamming => 4,
+    }
+}
+
+fn byte_to_metric(v: u8) -> Option<DistanceMetric> {
+    match v {
+        0 => Some(DistanceMetric::Cosine),
+        1 => Some(DistanceMetric::Euclidean),
+        2 => Some(DistanceMetric::DotProduct),
+        3 => Some(DistanceMetric::Manhattan),
+        4 => Some(DistanceMetric::Hamming),
+        _ => None,
+    }
+}
+
+// ── Binary serialization helpers ──
+
+fn write_u8(w: &mut impl Write, v: u8) -> io::Result<()> {
+    w.write_all(&[v])
+}
+
+fn read_u8(r: &mut impl Read) -> io::Result<u8> {
+    let mut buf = [0u8; 1];
+    r.read_exact(&mut buf)?;
+    Ok(buf[0])
 }
 
 fn write_u32(w: &mut impl Write, v: u32) -> io::Result<()> {
@@ -588,4 +647,22 @@ fn read_vector(r: &mut impl Read, dim: usize) -> io::Result<Vec<f32>> {
     std::mem::forget(buf);
     // safe: n = dim * 4, all f32 bit patterns are valid
     Ok(unsafe { Vec::from_raw_parts(ptr, len, cap) })
+}
+
+/// Serializes metadata as length-prefixed bincode bytes.
+fn write_metadata(w: &mut impl Write, meta: &Metadata) -> io::Result<()> {
+    let bytes =
+        bincode::serialize(meta).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    write_u32(w, bytes.len() as u32)?;
+    w.write_all(&bytes)
+}
+
+/// Deserializes length-prefixed bincode metadata bytes.
+fn read_metadata(r: &mut impl Read) -> io::Result<Metadata> {
+    let len = read_u32(r)? as usize;
+    let mut buf = vec![0u8; len];
+    if len > 0 {
+        r.read_exact(&mut buf)?;
+    }
+    bincode::deserialize(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::core::metric::DistanceMetric;
 use crate::core::record::Record;
 use crate::core::{Result, VectorDBError};
@@ -8,6 +10,7 @@ pub struct FlatIndex {
     records: Vec<Record>,
     norms: Vec<f32>,
     dimension: usize,
+    id_to_pos: HashMap<String, usize>,
 }
 
 impl FlatIndex {
@@ -24,6 +27,7 @@ impl FlatIndex {
             records: Vec::new(),
             norms: Vec::new(),
             dimension: 0,
+            id_to_pos: HashMap::new(),
         }
     }
 
@@ -171,14 +175,25 @@ impl Index for FlatIndex {
             });
         }
         self.norms.push(Self::l2_norm(&record.vector));
+        let pos = self.records.len();
+        self.id_to_pos.insert(record.id.clone(), pos);
         self.records.push(record);
         Ok(())
     }
 
     fn delete(&mut self, id: &str) -> Result<()> {
-        if let Some(pos) = self.records.iter().position(|r| r.id == id) {
-            self.records.swap_remove(pos);
-            self.norms.swap_remove(pos);
+        if let Some(pos) = self.id_to_pos.remove(id) {
+            // swap_remove swaps the last element into the hole; fix its map entry.
+            let last = self.records.len() - 1;
+            if pos != last {
+                let swapped_id = self.records[last].id.clone();
+                self.records.swap_remove(pos);
+                self.norms.swap_remove(pos);
+                self.id_to_pos.insert(swapped_id, pos);
+            } else {
+                self.records.swap_remove(pos);
+                self.norms.swap_remove(pos);
+            }
             if self.records.is_empty() {
                 self.dimension = 0;
             }
@@ -187,7 +202,7 @@ impl Index for FlatIndex {
     }
 
     fn get(&self, id: &str) -> Result<Option<Record>> {
-        Ok(self.records.iter().find(|r| r.id == id).cloned())
+        Ok(self.id_to_pos.get(id).map(|&pos| self.records[pos].clone()))
     }
 
     fn len(&self) -> usize {

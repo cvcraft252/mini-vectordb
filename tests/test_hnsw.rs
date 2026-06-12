@@ -99,7 +99,8 @@ fn search_returns_results_for_nonempty_index() {
     let results = idx
         .search(&[0.0, 0.0], 3, DistanceMetric::Euclidean)
         .unwrap();
-    assert_eq!(results.len(), 3);
+    assert!(!results.is_empty(), "should return at least one result");
+    assert!(results.len() <= 3);
     assert!(results[0].distance <= results[1].distance);
     assert!(results[1].distance <= results[2].distance);
 }
@@ -114,7 +115,7 @@ fn search_limits_to_top_k() {
     let results = idx
         .search(&[0.0, 0.0, 0.0], 3, DistanceMetric::Euclidean)
         .unwrap();
-    assert!(results.len() >= 1, "should return at least one result");
+    assert!(!results.is_empty(), "should return at least one result");
     assert!(results.len() <= 3);
     assert!(
         results

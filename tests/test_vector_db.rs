@@ -333,7 +333,7 @@ fn upgrades_to_hnsw_at_threshold() {
     }
     assert_eq!(db.len(), 1000);
     let results = db.search(&[0.0], 3, DistanceMetric::Euclidean).unwrap();
-    assert!(results.len() >= 1);
+    assert!(!results.is_empty());
     assert!(
         results
             .iter()
