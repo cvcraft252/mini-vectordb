@@ -8,18 +8,31 @@ semantic search with local embeddings.
 
 ## Usage
 
+```toml
+[dependencies]
+mini-vectordb = { git = "https://github.com/cvcraft252/mini-vectordb" }
+```
+
+Local model (fastembed):
+
 ```rust
 use mini_vectordb::{Engine, embed::FastEmbedEngine};
 
-let embedder = Box::new(FastEmbedEngine::try_new().unwrap());
-let engine = Engine::new(embedder);
+let mut engine = Engine::new(Box::new(FastEmbedEngine::try_new().unwrap()));
+engine.ingest("./doc.pdf", 1000).unwrap();
+let answer = engine.generate("what is this document about").unwrap();
+```
 
-// ingest documents
-engine.ingest("./docs/business_faq.txt", 1000).unwrap();
-engine.save("my_project").unwrap();
+Ollama or any OpenAI-compatible API:
 
-// semantic search
-let chunks = engine.query("what is the return policy", 3).unwrap();
+```rust
+use mini_vectordb::{Engine, embed::try_new_auto};
+
+// set env: EMBED_API_URL, EMBED_API_KEY, EMBED_MODEL_NAME,
+//          LLM_API_URL, LLM_API_KEY, LLM_MODEL_NAME
+let mut engine = Engine::new(try_new_auto().unwrap());
+engine.ingest("./doc.pdf", 1000).unwrap();
+let answer = engine.generate("what is multi-head attention").unwrap();
 ```
 
 ## Architecture
